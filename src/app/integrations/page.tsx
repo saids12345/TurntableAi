@@ -1,9 +1,9 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 
-export default function IntegrationsPage() {
+function IntegrationsContent() {
   const q = useSearchParams();
   const [email, setEmail] = useState("owner@example.com");
 
@@ -72,5 +72,13 @@ export default function IntegrationsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function IntegrationsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <IntegrationsContent />
+    </Suspense>
   );
 }
