@@ -2,16 +2,30 @@
 
 import { useState } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
   const supabase = createClientComponentClient();
-  const qp = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  function getRedirectTo() {
+    // Read ?redirect=/something from the URL using the browser API
+    // (this runs only in the browser, inside event handlers)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const redirectParam = params.get("redirect");
+      if (redirectParam) {
+        return `${window.location.origin}${redirectParam}`;
+      }
+    } catch {
+      // ignore if URLSearchParams/window isn't available for some reason
+    }
+    // Fallback: send them to the home page after login
+    return `${window.location.origin}/`;
+  }
 
   async function sendMagicLink(e: React.FormEvent) {
     e.preventDefault();
@@ -20,11 +34,7 @@ export default function LoginPage() {
     setErr(null);
 
     try {
-      // If we were redirected here (e.g. from /settings/voice), return there after sign-in
-      const redirectParam = qp.get("redirect");
-      const redirectTo =
-        `${window.location.origin}${redirectParam ?? ""}` ||
-        `${window.location.origin}/`;
+      const redirectTo = getRedirectTo();
 
       const { error } = await supabase.auth.signInWithOtp({
         email,
@@ -32,7 +42,9 @@ export default function LoginPage() {
       });
 
       if (error) throw error;
-      setMsg("Check your email for a one-click sign-in link. It may land in spam.");
+      setMsg(
+        "Check your email for a one-click sign-in link. It may land in spam."
+      );
     } catch (e: any) {
       setErr(e.message || "Could not send magic link.");
     } finally {
@@ -44,18 +56,17 @@ export default function LoginPage() {
     setSending(true);
     setErr(null);
     setMsg(null);
+
     try {
-      const redirectParam = qp.get("redirect");
-      const redirectTo =
-        `${window.location.origin}${redirectParam ?? ""}` ||
-        `${window.location.origin}/`;
+      const redirectTo = getRedirectTo();
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo },
       });
+
       if (error) throw error;
-      // browser will redirect to Google; no need to unset sending here
+      // Browser will redirect to Google; no need to unset sending here
     } catch (e: any) {
       setErr(e.message || "Google sign-in failed.");
       setSending(false);
@@ -96,7 +107,6 @@ export default function LoginPage() {
 
         <div className="my-5 h-px bg-neutral-800" />
 
-        {/* Optional OAuth button — enable Google in Supabase to use */}
         <button
           onClick={signInWithGoogle}
           disabled={sending}
@@ -109,7 +119,8 @@ export default function LoginPage() {
         {err && <p className="text-red-400 mt-4">{err}</p>}
 
         <p className="text-xs text-neutral-500 mt-6">
-          By continuing, you agree to the Terms and acknowledge the Privacy Policy.
+          By continuing, you agree to the Terms and acknowledge the Privacy
+          Policy.
         </p>
       </div>
     </div>
