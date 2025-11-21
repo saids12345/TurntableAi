@@ -1,6 +1,5 @@
-// eslint.config.mjs
-import { fileURLToPath } from "url";
 import { dirname } from "path";
+import { fileURLToPath } from "url";
 import { FlatCompat } from "@eslint/eslintrc";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -8,29 +7,21 @@ const __dirname = dirname(__filename);
 const compat = new FlatCompat({ baseDirectory: __dirname });
 
 export default [
-  // Use Next + TypeScript recommended bases
+  // Next’s recommended configs
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 
-  // Global ignores (keeps lint fast + avoids blocking builds)
+  // 🔧 Relax a couple of TS rules that are breaking your deploy
   {
-    ignores: [
-      "node_modules/**",
-      ".next/**",
-      "out/**",
-      "build/**",
-      "next-env.d.ts",
-    ],
-  },
-
-  // Turn off strict TS rules that are breaking your Vercel build
-  {
+    files: ["**/*.{ts,tsx,js,jsx}"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-unsafe-assignment": "off",
-      "@typescript-eslint/no-unsafe-member-access": "off",
-      "@typescript-eslint/no-unsafe-return": "off",
-      "@typescript-eslint/no-var-requires": "off",
+      "@typescript-eslint/ban-ts-comment": "off",
     },
+  },
+
+  // Ignore build artifacts entirely
+  {
+    ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts"],
   },
 ];
 

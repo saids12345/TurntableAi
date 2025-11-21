@@ -1,3 +1,4 @@
+// src/app/integrations/page.tsx
 "use client";
 
 import { useSearchParams } from "next/navigation";
@@ -29,7 +30,7 @@ function IntegrationsContent() {
                 </div>
               </div>
 
-              {/* GET with ?email=... — start route will encode it into OAuth state */}
+              {/* IMPORTANT: path must match your API route */}
               <form action="/api/google/auth/start" method="GET">
                 <input type="hidden" name="email" value={email} />
                 <button className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20">

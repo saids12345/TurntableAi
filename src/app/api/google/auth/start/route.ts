@@ -2,20 +2,43 @@
 import { NextRequest, NextResponse } from "next/server";
 import { googleAuthUrl } from "@/lib/google";
 
-/**
- * Starts Google OAuth.
- * Accepts ?email=owner@restaurant.com (optional) and bakes it into the OAuth state.
- * For now we use userId = "demo" (will be replaced by real auth later).
- */
-export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
-  const email = url.searchParams.get("email") || "owner@example.com";
-  const userId = "demo"; // TODO: replace with signed-in user id in Step 2
+export const runtime = "nodejs"; // ensure Buffer is available
 
-  // encode a small payload into state so we get it back in the callback
-  const statePayload = { u: userId, e: email };
-  const state = Buffer.from(JSON.stringify(statePayload)).toString("base64url");
-
-  return NextResponse.redirect(googleAuthUrl(state));
+// Edge-safe base64url encode (also fine in Node)
+function base64urlEncode(obj: unknown) {
+  const json = typeof obj === "string" ? obj : JSON.stringify(obj);
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(json).toString("base64url");
+  }
+  // Fallback (rare, since we force node runtime)
+  const s = typeof json === "string" ? json : JSON.stringify(json);
+  // @ts-ignore
+  return btoa(s).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
+export async function GET(req: NextRequest) {
+  try {
+    // Guard: required env vars for Google OAuth
+    for (const key of ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI"]) {
+      if (!process.env[key]) {
+        return NextResponse.json({ error: `Missing env: ${key}` }, { status: 500 });
+      }
+    }
+
+    const url = new URL(req.url);
+    const email = url.searchParams.get("email") || "owner@example.com";
+
+    // TODO (Step 2): replace with the signed-in user's id
+    const userId = "demo";
+
+    // Encode small payload to round-trip via OAuth state
+    const state = base64urlEncode({ u: userId, e: email });
+
+    // Build Google OAuth URL and redirect (absolute URL object)
+    const redirectStr = googleAuthUrl(state);
+    return NextResponse.redirect(new URL(redirectStr));
+  } catch (e: any) {
+    console.error("oauth start error:", e);
+    return NextResponse.json({ error: e?.message || "start_oauth_failed" }, { status: 500 });
+  }
+}

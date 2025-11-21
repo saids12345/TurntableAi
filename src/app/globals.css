@@ -1,9 +1,9 @@
-/* Keep this ultra-safe to boot the app */
+/* ========== Tailwind Base ========== */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* No @apply with arbitrary values, no custom plugin features */
+/* ========== Root Theme Vars ========== */
 :root {
   --bg: #0a0a0a;
   --fg: #f5f5f5;
@@ -16,13 +16,20 @@ html.dark body {
     Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
-/* Simple helper that won’t confuse Tailwind */
-.container-safe { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
-/* Smooth scrolling for navbar anchors */
-html { scroll-behavior: smooth; }
+/* ========== Layout Helpers ========== */
+html {
+  scroll-behavior: smooth;
+}
 
-/* Animated gradient headline */
-.animated-gradient {
+.container-safe {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+/* ========== Gradient Headline ========== */
+.animated-gradient,
+.text-gradient {
   background-image: linear-gradient(90deg, #67e8f9, #60a5fa, #a78bfa, #22d3ee);
   background-size: 300% 300%;
   -webkit-background-clip: text;
@@ -30,16 +37,18 @@ html { scroll-behavior: smooth; }
   color: transparent;
   animation: gradientShift 8s ease infinite;
 }
+
 @keyframes gradientShift {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
-/* ---------- Animations & helpers ---------- */
+
+/* ========== Utility Animations ========== */
 @layer utilities {
   @keyframes glow {
-    0%, 100% { text-shadow: 0 0 0 rgba(56,189,248,0.0); }
-    50%      { text-shadow: 0 0 32px rgba(236,72,153,0.35); }
+    0%, 100% { text-shadow: 0 0 0 rgba(56,189,248,0); }
+    50% { text-shadow: 0 0 32px rgba(236,72,153,0.35); }
   }
   .animate-glow { animation: glow 5s ease-in-out infinite; }
 
@@ -57,40 +66,55 @@ html { scroll-behavior: smooth; }
   .animate-float { animation: float 7s ease-in-out infinite; }
   .animate-float-slow { animation: float 10s ease-in-out infinite; }
   .animate-float-slower { animation: float 14s ease-in-out infinite; }
+}
 
-  .anchor {
-    @apply rounded-full border border-neutral-700 px-3 py-1 text-neutral-300 hover:bg-neutral-800 hover:text-white transition;
+/* ========== Buttons / Pressables / Cards ========== */
+@layer components {
+  .btn {
+    @apply rounded-md px-3.5 py-2 text-sm font-semibold transition-colors duration-200;
   }
-}
-/* ---------- Helpers ---------- */
-.container-safe { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+  .btn-primary {
+    @apply bg-neutral-800 text-white border border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600;
+  }
 
-/* Card look + hover */
-.card {
-  @apply rounded-2xl border border-white/10 bg-neutral-900/40 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-all;
-}
-.card:hover {
-  box-shadow:
-    0 0 0 1px rgba(255,255,255,0.06),
-    0 12px 30px rgba(0,0,0,0.40),
-    0 0 60px rgba(56,189,248,0.10);
-  transform: translateY(-2px);
+  .pressable {
+    @apply transition-transform duration-150 will-change-transform;
+  }
+  .pressable:hover {
+    transform: translateY(-1px) scale(1.02);
+  }
+  .pressable:active {
+    transform: translateY(0) scale(0.99);
+  }
+
+  .card {
+    @apply relative rounded-2xl border border-white/10 bg-neutral-900/50 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-all;
+  }
+  .card-hover {
+    @apply transition-transform duration-300 will-change-transform;
+  }
+  .card-hover:hover {
+    transform: translateY(-4px) scale(1.015);
+  }
+  .card-accent {
+    pointer-events: none;
+    position: absolute;
+    inset: -1px;
+    border-radius: 16px;
+    background: linear-gradient(
+      90deg,
+      rgba(99,102,241,0) 0%,
+      rgba(56,189,248,0.35) 50%,
+      rgba(236,72,153,0) 100%
+    );
+    opacity: 0;
+    transition: opacity .25s ease;
+    z-index: 0;
+  }
+  .card:hover .card-accent { opacity: .9; }
 }
 
-/* Soft page background shapes */
-html.dark body {
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(14,165,233,0.10), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, rgba(168,85,247,0.08), transparent 55%),
-    #0a0a0a;
-}
-
-/* Toast in animation */
-@keyframes toast-in {
-  from { transform: translateY(6px); opacity: 0; }
-  to   { transform: translateY(0);   opacity: 1; }
-}
-/* ---------- Typewriter caret ---------- */
+/* ========== Typewriter caret ========== */
 @keyframes caretBlink {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
@@ -100,205 +124,24 @@ html.dark body {
   animation: caretBlink 1s step-end infinite;
 }
 
-/* ---------- Micro-interactions / utilities ---------- */
-@layer components {
-  .btn {
-    @apply rounded-md px-3.5 py-2 text-sm font-semibold transition-colors duration-200;
-  }
-  .btn-primary {
-    @apply bg-neutral-800 text-white border border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600;
-  }
-  .pressable {
-    @apply transition-transform duration-150 will-change-transform;
-  }
-  .pressable:hover {
-    transform: translateY(-1px) scale(1.02);
-  }
-  .pressable:active {
-    transform: translateY(0px) scale(0.99);
-  }
-
-  .card {
-    @apply relative rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5 md:p-6;
-  }
-  .card-hover {
-    @apply transition-transform duration-300 will-change-transform;
-  }
-  .card-hover:hover {
-    transform: translateY(-4px) scale(1.015);
-  }
-
-  /* subtle RGB edge on hover */
-  .card-accent {
-    pointer-events: none;
-    position: absolute;
-    inset: -1px;
-    border-radius: 16px;
-    background: linear-gradient(
-      90deg,
-      rgba(99, 102, 241, 0) 0%,
-      rgba(56, 189, 248, 0.35) 50%,
-      rgba(236, 72, 153, 0) 100%
-    );
-    opacity: 0;
-    transition: opacity .25s ease;
-    z-index: 0;
-  }
-  .card:hover .card-accent { opacity: .9; }
-}
-
-/* Reduce motion for accessibility */
+/* ========== Accessibility & Misc ========== */
 @media (prefers-reduced-motion: reduce) {
   .pressable, .card-hover { transition: none !important; }
   .pressable:hover, .pressable:active, .card-hover:hover { transform: none !important; }
   .type-caret { animation: none !important; }
 }
-/* ===== Glowing background + animations ===== */
-@layer utilities {
-  /* animated float */
-  @keyframes float {
-    0% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-    100% { transform: translateY(0px); }
-  }
-  .animate-float { animation: float 7s ease-in-out infinite; }
-  .animate-float-slow { animation: float 10s ease-in-out infinite; }
-  .animate-float-slower { animation: float 14s ease-in-out infinite; }
 
-  /* gradient headline helper */
-  .text-gradient {
-    background-image: linear-gradient(90deg, #67e8f9, #60a5fa, #a78bfa, #22d3ee);
-    background-size: 300% 300%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: gradientShift 8s ease infinite;
-  }
-  @keyframes gradientShift {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-  }
-
-  /* card glow */
-  .card {
-    @apply relative rounded-2xl border border-white/10 bg-neutral-900/50 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-all;
-  }
-  .card-hover { @apply transition-transform duration-300 will-change-transform; }
-  .card-hover:hover { transform: translateY(-4px) scale(1.015); }
-  .card-accent {
-    pointer-events: none;
-    position: absolute;
-    inset: -1px;
-    border-radius: 16px;
-    background: linear-gradient(
-      90deg,
-      rgba(99,102,241,0) 0%,
-      rgba(56,189,248,0.35) 50%,
-      rgba(236,72,153,0) 100%
-    );
-    opacity: 0;
-    transition: opacity .25s ease;
-    z-index: 0;
-  }
-  .card:hover .card-accent { opacity: .9; }
-
-  /* buttons + press micro-interaction (if not already present) */
-  .btn { @apply rounded-md px-3.5 py-2 text-sm font-semibold transition-colors duration-200; }
-  .btn-primary { @apply bg-neutral-800 text-white border border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600; }
-  .pressable { @apply transition-transform duration-150 will-change-transform; }
-  .pressable:hover { transform: translateY(-1px) scale(1.02); }
-  .pressable:active { transform: translateY(0) scale(0.99); }
-}
-
-/* dark backdrop with subtle colored glows */
-html.dark body {
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(14,165,233,0.10), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, rgba(168,85,247,0.08), transparent 55%),
-    #0a0a0a;
-}
-/* ===== Glowing background + animations ===== */
-@layer utilities {
-  /* animated float */
-  @keyframes float {
-    0% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-    100% { transform: translateY(0px); }
-  }
-  .animate-float { animation: float 7s ease-in-out infinite; }
-  .animate-float-slow { animation: float 10s ease-in-out infinite; }
-  .animate-float-slower { animation: float 14s ease-in-out infinite; }
-
-  /* gradient headline helper */
-  .text-gradient {
-    background-image: linear-gradient(90deg, #67e8f9, #60a5fa, #a78bfa, #22d3ee);
-    background-size: 300% 300%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: gradientShift 8s ease infinite;
-  }
-  @keyframes gradientShift {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-  }
-
-  /* card glow */
-  .card {
-    @apply relative rounded-2xl border border-white/10 bg-neutral-900/50 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-all;
-  }
-  .card-hover { @apply transition-transform duration-300 will-change-transform; }
-  .card-hover:hover { transform: translateY(-4px) scale(1.015); }
-  .card-accent {
-    pointer-events: none;
-    position: absolute;
-    inset: -1px;
-    border-radius: 16px;
-    background: linear-gradient(
-      90deg,
-      rgba(99,102,241,0) 0%,
-      rgba(56,189,248,0.35) 50%,
-      rgba(236,72,153,0) 100%
-    );
-    opacity: 0;
-    transition: opacity .25s ease;
-    z-index: 0;
-  }
-  .card:hover .card-accent { opacity: .9; }
-
-  /* buttons + press micro-interaction (if not already present) */
-  .btn { @apply rounded-md px-3.5 py-2 text-sm font-semibold transition-colors duration-200; }
-  .btn-primary { @apply bg-neutral-800 text-white border border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600; }
-  .pressable { @apply transition-transform duration-150 will-change-transform; }
-  .pressable:hover { transform: translateY(-1px) scale(1.02); }
-  .pressable:active { transform: translateY(0) scale(0.99); }
-}
-
-/* dark backdrop with subtle colored glows */
-html.dark body {
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(14,165,233,0.10), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, rgba(168,85,247,0.08), transparent 55%),
-    #0a0a0a;
-}
-/* Subtle focus ring for inputs/buttons that don't already have one */
 .focus-soft:focus {
   outline: none;
   box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.25);
 }
 
-/* Slight card lift on hover (used by ResultCard) */
-.card-hover {
-  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
-}
-.card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 0 0 1px rgba(255,255,255,0.06) inset,
-    0 18px 80px -28px rgba(0,0,0,0.40);
-  border-color: rgba(120, 120, 120, 0.25);
+/* ========== Background Glow ========== */
+html.dark body {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(14,165,233,0.10), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(168,85,247,0.08), transparent 55%),
+    #0a0a0a;
 }
 
 

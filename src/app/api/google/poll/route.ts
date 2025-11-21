@@ -1,33 +1,34 @@
 // src/app/api/google/poll/route.ts
 import { NextResponse } from "next/server";
-import { getConnByUser, setLastSeen } from "@/lib/store";
+import { getConnByUser, setLastSeen, upsertReviews } from "@/lib/store";
 import { listReviews, refreshToken, starToNumber } from "@/lib/google";
 import { sendReviewEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Polls Google Business Profile for new reviews for the user, and emails alerts.
- * In Step 2 we'll replace userId="demo" with the real authenticated user id
- * (or run a loop for all users if you want a global cron).
+ * Polls Google Business Profile for new reviews for the user, emails alerts,
+ * and upserts the reviews into public.reviews.
+ *
+ * NOTE: Step 2 will replace userId="demo" with the real auth user id.
  */
 export async function POST() {
-  const userId = "demo"; // TODO (Step 2): replace with signed-in user id or iterate all users via DB
+  const userId = "demo"; // TODO (Step 2): replace with signed-in user id (e.g., from Supabase auth)
   const conn = await getConnByUser(userId);
   if (!conn) return NextResponse.json({ ok: true, message: "No Google connection." });
 
-  // Try refreshing access token if we have a refresh_token
+  // Refresh access token if we have a refresh_token
   if (conn.tokens.refresh_token) {
     try {
       const r = await refreshToken(conn.tokens.refresh_token);
       conn.tokens.access_token = r.access_token;
-      // (Optional) you could persist the refreshed access_token here if you want.
     } catch (e) {
       console.warn("token refresh failed", e);
     }
   }
 
   let sent = 0;
+  let saved = 0;
   const newLastSeen: Record<string, string> = {};
 
   for (const loc of conn.locations) {
@@ -35,10 +36,15 @@ export async function POST() {
       const res = await listReviews(conn.tokens.access_token, loc.name);
       const last = conn.lastSeenByLocation?.[loc.name];
 
-      const fresh = (res.reviews || []).filter((r) => r.updateTime && (!last || r.updateTime > last));
-      // newest → oldest for nicer mail ordering
+      // Only the new ones since last time
+      const fresh = (res.reviews || []).filter(
+        (r) => r.updateTime && (!last || r.updateTime > last)
+      );
+
+      // newest → oldest for nicer email ordering
       fresh.sort((a, b) => (a.updateTime! < b.updateTime! ? 1 : -1));
 
+      // 1) Email alerts
       for (const r of fresh) {
         await sendReviewEmail({
           to: conn.email,
@@ -50,9 +56,30 @@ export async function POST() {
           createdTime: r.createTime,
         });
         sent++;
-        await new Promise((res) => setTimeout(res, 200)); // gentle throttle
+        // gentle throttle to play nice
+        await new Promise((res) => setTimeout(res, 200));
       }
 
+      // 2) Persist to DB
+      if (fresh.length) {
+        const payload = fresh.map((r) => ({
+          userId,
+          provider: "google" as const,
+          providerReviewId: (r.name || r.reviewId || "").toString(),
+          locationName: loc.name,
+          rating: starToNumber(r.starRating) ?? null,
+          text: r.comment ?? null,
+          author: r.reviewer?.displayName ?? null,
+          createTime: r.createTime ?? null,
+          updateTime: r.updateTime ?? null,
+          raw: r, // keep full provider payload for debugging
+        }));
+
+        const result = await upsertReviews(payload);
+        saved += result.upserted;
+      }
+
+      // advance the high-water mark
       const newestUpdate = res.reviews?.[0]?.updateTime || last || new Date().toISOString();
       newLastSeen[loc.name] = newestUpdate;
     } catch (e) {
@@ -64,6 +91,5 @@ export async function POST() {
     await setLastSeen(userId, newLastSeen);
   }
 
-  return NextResponse.json({ ok: true, sent });
+  return NextResponse.json({ ok: true, sent, saved });
 }
-
