@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/gmail-yelp",
+      "schedule": "0 * * * *"
+    }
+  ]
+}
