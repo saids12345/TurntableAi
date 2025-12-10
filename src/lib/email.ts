@@ -27,7 +27,7 @@ interface EmailClient {
 
 const RESEND_KEY = process.env.RESEND_API_KEY || "";
 const FROM = process.env.ALERT_FROM_EMAIL || "alerts@example.com";
-const APP  = process.env.APP_BASE_URL || "http://localhost:3000";
+const APP = process.env.APP_BASE_URL || "http://localhost:3000";
 
 /** Create a client only when we have a key; cast to our minimal interface. */
 const client: EmailClient | null = RESEND_KEY
@@ -90,25 +90,67 @@ type ReviewEmail = {
   reviewer?: string;
   reviewUrl?: string;
   createdTime?: string;
+  aiReply?: string; // <- optional AI draft preview
 };
 
 export async function sendReviewEmail(input: ReviewEmail) {
   const subject = `📣 New ${input.platform} review for ${input.locationName}`;
-  const html = wrapper(
-    subject,
-    [
-      `<p>You have a new ${input.platform} review${
-        input.rating ? ` (${input.rating}★)` : ""
-      }:</p>`,
-      `<blockquote style="margin:0;padding:12px;border-left:3px solid #999;background:#111;color:#eee;border-radius:8px">${escapeHtml(
-        input.reviewText || "(no text)"
-      )}</blockquote>`,
-      input.reviewer ? `<p><b>Reviewer:</b> ${escapeHtml(input.reviewer)}</p>` : "",
-      input.createdTime ? `<p><b>Time:</b> ${new Date(input.createdTime).toLocaleString()}</p>` : "",
-      `<p><a href="${APP}/reviews" style="display:inline-block;padding:10px 14px;background:#8b5cf6;color:#fff;border-radius:8px;text-decoration:none">Open Review Responder</a></p>`,
-      input.reviewUrl ? `<p><a href="${input.reviewUrl}">View on Google</a></p>` : "",
-    ].join("")
+
+  const parts: string[] = [];
+
+  // Original review blurb
+  parts.push(
+    `<p>You have a new ${input.platform} review${
+      input.rating ? ` (${input.rating}★)` : ""
+    }:</p>`
   );
+
+  parts.push(
+    `<blockquote style="margin:0;padding:12px;border-left:3px solid #999;background:#111;color:#eee;border-radius:8px">${escapeHtml(
+      input.reviewText || "(no review text)"
+    )}</blockquote>`
+  );
+
+  if (input.reviewer) {
+    parts.push(
+      `<p><b>Reviewer:</b> ${escapeHtml(input.reviewer)}</p>`
+    );
+  }
+
+  if (input.createdTime) {
+    parts.push(
+      `<p><b>Time:</b> ${new Date(input.createdTime).toLocaleString()}</p>`
+    );
+  }
+
+  // Optional AI-drafted reply preview
+  if (input.aiReply) {
+    parts.push(
+      `<h3 style="margin-top:24px;color:#c084fc">AI-Drafted Reply</h3>`,
+      `<blockquote style="margin:0;padding:12px;border-left:3px solid #c084fc;background:#0b0615;color:#f9f5ff;border-radius:8px">${escapeHtml(
+        input.aiReply
+      )}</blockquote>`
+    );
+  }
+
+  // Button back into TurnTable AI
+  parts.push(
+    `<p style="margin-top:20px">
+       <a href="${APP}/reviews"
+          style="display:inline-block;padding:10px 14px;background:#8b5cf6;color:#fff;border-radius:8px;text-decoration:none">
+         Open Review Responder
+       </a>
+     </p>`
+  );
+
+  // Optional deep link to Google review
+  if (input.reviewUrl) {
+    parts.push(
+      `<p><a href="${input.reviewUrl}" style="color:#93c5fd">View on Google</a></p>`
+    );
+  }
+
+  const html = wrapper(subject, parts.join(""));
 
   return sendEmail({ to: input.to, subject, html });
 }
@@ -121,9 +163,13 @@ function escapeHtml(s: string) {
   return s.replace(
     /[&<>"']/g,
     (m) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[
-        m
-      ] as string)
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[m] as string)
   );
 }
 

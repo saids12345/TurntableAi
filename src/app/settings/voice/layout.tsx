@@ -1,26 +1,19 @@
 // src/app/settings/voice/layout.tsx
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+import type { Metadata } from "next";
 
-export default async function VoiceSettingsLayout({
+export const metadata: Metadata = {
+  title: "Brand Voice Settings · TurnTable AI",
+  description:
+    "Save your restaurant’s brand voice so TurnTable AI can reply to reviews in your tone.",
+};
+
+export default function VoiceSettingsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // Next.js 15: cookies() is async, so we await it first
-  // Then pass a function that returns the awaited cookies
-  const cookieStore = await cookies();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const supabase = createServerComponentClient({ cookies: () => cookieStore as any });
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  // If not signed in, send to /login and come back here after auth
-  if (!session) {
-    redirect("/login?redirect=/settings/voice");
-  }
-
+  // Keep this layout minimal so the page controls its own UI.
+  // Root layout already provides the header/nav.
   return <>{children}</>;
 }
+

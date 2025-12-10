@@ -1,133 +1,132 @@
 // src/app/api/voice-profile/route.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+/**
+ * GET  /api/voice-profile
+ * Returns the current user's saved brand voice style guide (if any).
+ */
+export async function GET(_req: NextRequest) {
+  try {
+    const supabase = await getSupabaseRouteClient();
 
-// ---------- helpers ----------
-function buildStylePrompt(samples: string[]) {
-  const joined = samples
-    .map((s, i) => `Sample ${i + 1}:\n${s.trim()}`)
-    .join("\n\n");
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-  return `
-You are a brand voice analyst.
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Not signed in" },
+        { status: 401 }
+      );
+    }
 
-Given REAL social captions and/or review replies for a small, community-rooted café,
-write a concise, reusable **Brand Voice Style Guide** as short bullet points.
+    const { data, error } = await supabase
+      .from("voice_profiles")
+      .select("style_guide, updated_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-Requirements:
-- 8–12 bullets. Be specific and actionable.
-- Cover tone, sentence length, emojis/hashtags policy, sensory language, inclusivity,
-  do/don’t phrasing, and examples of signature phrases.
-- Keep it neutral and brand-safe (no slang that can alienate).
+    if (error) {
+      console.error("voice-profile GET error", error);
+      return NextResponse.json(
+        { error: "Failed to load voice profile" },
+        { status: 500 }
+      );
+    }
 
-${joined}
-`.trim();
-}
-
-function extractText(resp: any): string {
-  // v5 Responses: some SDK versions expose `output_text`, others a content array
-  const direct = resp?.output_text;
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
-
-  const content = resp?.output?.[0]?.content ?? [];
-  const node =
-    content.find((p: any) => typeof p?.text === "string") ??
-    content.find((p: any) => typeof p?.output_text === "string");
-
-  const text = node?.text ?? node?.output_text;
-  return typeof text === "string" ? text.trim() : "";
-}
-
-// ---------- routes ----------
-export async function GET() {
-  const supabase = await getSupabaseRouteClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data, error } = await supabase
-    .from("voice_profiles")
-    .select("*")
-    .eq("user_id", user.id)
-    .single();
-
-  // PGRST116 = no rows
-  if (error && error.code !== "PGRST116") {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  return NextResponse.json({ profile: data ?? null });
-}
-
-export async function POST(req: NextRequest) {
-  const supabase = await getSupabaseRouteClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await req.json().catch(() => ({}));
-  const samples: string[] = Array.isArray(body?.samples) ? body.samples : [];
-
-  if (samples.length < 3) {
+    return NextResponse.json({
+      styleGuide: data?.style_guide ?? null,
+      updatedAt: data?.updated_at ?? null,
+    });
+  } catch (err) {
+    console.error("voice-profile GET unexpected", err);
     return NextResponse.json(
-      { error: "Please provide at least 3 samples." },
-      { status: 400 },
+      { error: "Server error" },
+      { status: 500 }
     );
   }
-
-  const prompt = buildStylePrompt(samples);
-
-  const aiResp = await openai.responses.create({
-    model: "gpt-4.1-mini",
-    input: prompt,
-  });
-
-  // ✅ FIX: cast/normalize the response to satisfy TS
-  const style_guide = extractText(aiResp) || "No result.";
-
-  const { data, error } = await supabase
-    .from("voice_profiles")
-    .upsert(
-      {
-        user_id: user.id,
-        samples,
-        style_guide,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" }, // requires UNIQUE(user_id) or PRIMARY KEY (user_id)
-    )
-    .select()
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  return NextResponse.json({ profile: data });
 }
 
-export async function DELETE() {
-  const supabase = await getSupabaseRouteClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+/**
+ * POST /api/voice-profile
+ * Body: { styleGuide: string }
+ * Saves / updates the current user's brand voice style guide.
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = await getSupabaseRouteClient();
 
-  const { error } = await supabase
-    .from("voice_profiles")
-    .delete()
-    .eq("user_id", user.id);
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Not signed in" },
+        { status: 401 }
+      );
+    }
+
+    const body = (await req.json().catch(() => ({}))) as {
+      styleGuide?: string;
+    };
+
+    const raw = (body.styleGuide ?? "").toString();
+    const styleGuide = raw.trim();
+
+    if (!styleGuide) {
+      return NextResponse.json(
+        { error: "Style guide cannot be empty." },
+        { status: 400 }
+      );
+    }
+
+    // simple length guard so people don't paste a whole book
+    if (styleGuide.length > 6000) {
+      return NextResponse.json(
+        { error: "Style guide is too long (max ~6000 characters)." },
+        { status: 400 }
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("voice_profiles")
+      .upsert(
+        [
+          {
+            user_id: user.id,
+            style_guide: styleGuide,
+            updated_at: now,
+          },
+        ],
+        { onConflict: "user_id" }
+      );
+
+    if (error) {
+      console.error("voice-profile POST error", error);
+      return NextResponse.json(
+        { error: "Failed to save voice profile" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      styleGuide,
+      updatedAt: now,
+    });
+  } catch (err) {
+    console.error("voice-profile POST unexpected", err);
+    return NextResponse.json(
+      { error: "Server error" },
+      { status: 500 }
+    );
   }
-  return NextResponse.json({ ok: true });
 }
+

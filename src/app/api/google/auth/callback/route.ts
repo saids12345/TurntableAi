@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
     // Recover userId + email from state (with safe fallbacks)
     let userId = "demo";
     let email = "owner@example.com";
+
     if (state) {
       try {
         const json = Buffer.from(state, "base64url").toString("utf8");
@@ -36,33 +37,55 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Exchange auth code for tokens
+    // 1) Exchange auth code for tokens
     const tokens = await exchangeCode(code);
 
-    // Fetch accounts & locations
-    const accounts = await listAccounts(tokens.access_token);
-    const acc = accounts.accounts?.[0];
+    // 2) Try to fetch accounts & locations.
+    // If this fails (no Business Profile / permissions), we just log it
+    // and continue with an empty locations array instead of failing OAuth.
     let locs: { name: string; title: string }[] = [];
-    if (acc?.name) {
-      const res = await listLocations(tokens.access_token, acc.name);
-      locs = (res.locations || []).map((l) => ({
-        name: l.name,
-        title: l.title || l.name,
-      }));
+    let accountName: string | undefined;
+
+    try {
+      const accounts = await listAccounts(tokens.access_token);
+      const acc = accounts.accounts?.[0];
+
+      if (acc?.name) {
+        accountName = acc.name;
+        const res = await listLocations(tokens.access_token, acc.name);
+        locs = (res.locations || []).map((l) => ({
+          name: l.name,
+          title: l.title || l.name,
+        }));
+      }
+    } catch (err) {
+      console.error("listAccounts/listLocations failed:", err);
+      // we keep locs empty; connection will still be saved
     }
 
-    // Save connection in Supabase
+    // 3) Save connection in Supabase (even if locs is empty)
     await upsertConn({
       userId,
       email,
-      accountName: acc?.name,
-      tokens: { access_token: tokens.access_token, refresh_token: tokens.refresh_token },
+      accountName,
+      tokens: {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+      },
       locations: locs,
     });
 
     return redirectTo(req, "?connected=google");
-  } catch (e) {
+  } catch (e: any) {
     console.error("oauth callback failed:", e);
-    return redirectTo(req, "?error=oauth_failed");
+
+    // DEV: surface the actual error text in the query param so you can see it
+    const msg =
+      typeof e?.message === "string" ? e.message : "oauth_failed";
+
+    return redirectTo(
+      req,
+      `?error=${encodeURIComponent(msg.slice(0, 80))}` // keep it short
+    );
   }
 }

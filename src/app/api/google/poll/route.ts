@@ -4,18 +4,35 @@ import { getConnByUser, setLastSeen, upsertReviews } from "@/lib/store";
 import { listReviews, refreshToken, starToNumber } from "@/lib/google";
 import { sendReviewEmail } from "@/lib/email";
 
+// make sure this route isn't cached
 export const dynamic = "force-dynamic";
+
+// Helper to get base URL for calling our own API routes
+function getBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.APP_BASE_URL ||
+    "http://localhost:3000"
+  );
+}
 
 /**
  * Polls Google Business Profile for new reviews for the user, emails alerts,
  * and upserts the reviews into public.reviews.
  *
- * NOTE: Step 2 will replace userId="demo" with the real auth user id.
+ * NOTE: currently uses a hard-coded userId="demo".
+ * Later we'll replace that with real auth user ids / all connections.
  */
 export async function POST() {
-  const userId = "demo"; // TODO (Step 2): replace with signed-in user id (e.g., from Supabase auth)
+  const userId = "demo"; // TODO (Step 2): replace with signed-in user id(s)
   const conn = await getConnByUser(userId);
-  if (!conn) return NextResponse.json({ ok: true, message: "No Google connection." });
+
+  if (!conn) {
+    return NextResponse.json({
+      ok: true,
+      message: "No Google connection.",
+    });
+  }
 
   // Refresh access token if we have a refresh_token
   if (conn.tokens.refresh_token) {
@@ -27,6 +44,7 @@ export async function POST() {
     }
   }
 
+  const baseUrl = getBaseUrl();
   let sent = 0;
   let saved = 0;
   const newLastSeen: Record<string, string> = {};
@@ -44,19 +62,58 @@ export async function POST() {
       // newest → oldest for nicer email ordering
       fresh.sort((a, b) => (a.updateTime! < b.updateTime! ? 1 : -1));
 
-      // 1) Email alerts
+      // 1) Email alerts (+ AI auto-drafts)
       for (const r of fresh) {
+        const rating = starToNumber(r.starRating) ?? null;
+        const reviewText = r.comment || "";
+
+        // --- call your AI reply generator ---
+        let aiReply: string | null = null;
+        try {
+          const aiRes = await fetch(`${baseUrl}/api/review-reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              reviewText,
+              rating,
+              platform: "Google",
+              tone: "Friendly",
+              business: loc.title,
+              city: null,
+              length: "medium",
+              policy_apologize: true,
+              policy_no_admission: true,
+              policy_offer_remedy_if_low: true,
+              language: "English",
+            }),
+          });
+
+          const aiData: any = await aiRes.json().catch(() => ({}));
+
+          if (
+            aiRes.ok &&
+            typeof aiData?.reply === "string" &&
+            aiData.reply.trim()
+          ) {
+            aiReply = aiData.reply.trim();
+          }
+        } catch (err) {
+          console.error("AI reply generation failed:", err);
+        }
+
         await sendReviewEmail({
           to: conn.email,
           platform: "Google",
           locationName: loc.title,
-          rating: starToNumber(r.starRating),
-          reviewText: r.comment || "",
-          reviewer: r.reviewer?.displayName,
-          createdTime: r.createTime,
+          rating: rating ?? undefined,
+          reviewText,
+          reviewer: r.reviewer?.displayName ?? undefined,
+          createdTime: r.createTime ?? undefined,
+          aiReply: aiReply ?? undefined,
         });
+
         sent++;
-        // gentle throttle to play nice
+        // gentle throttle to play nice with email provider / Google
         await new Promise((res) => setTimeout(res, 200));
       }
 
@@ -80,7 +137,8 @@ export async function POST() {
       }
 
       // advance the high-water mark
-      const newestUpdate = res.reviews?.[0]?.updateTime || last || new Date().toISOString();
+      const newestUpdate =
+        res.reviews?.[0]?.updateTime || last || new Date().toISOString();
       newLastSeen[loc.name] = newestUpdate;
     } catch (e) {
       console.error("poll error for", loc.name, e);
@@ -93,3 +151,4 @@ export async function POST() {
 
   return NextResponse.json({ ok: true, sent, saved });
 }
+export const GET = POST;

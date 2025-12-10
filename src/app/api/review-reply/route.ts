@@ -22,6 +22,12 @@ function extractText(resp: any): string {
   return typeof text === "string" ? text.trim() : "";
 }
 
+type VariantFlavor =
+  | "base"
+  | "warmer"
+  | "shorter"
+  | "more_professional";
+
 /** Build the system/prompt text for reply generation */
 function buildReplyPrompt(params: {
   reviewText: string;
@@ -36,6 +42,7 @@ function buildReplyPrompt(params: {
   policy_offer_remedy_if_low?: boolean | null;
   language?: string | null;
   styleGuide?: string | null;
+  variantFlavor?: VariantFlavor;
 }) {
   const {
     reviewText,
@@ -50,6 +57,7 @@ function buildReplyPrompt(params: {
     policy_offer_remedy_if_low,
     language,
     styleGuide,
+    variantFlavor = "base",
   } = params;
 
   const lenHint =
@@ -70,22 +78,49 @@ function buildReplyPrompt(params: {
     .filter(Boolean)
     .join(" ");
 
+  let variantInstructions = "";
+  switch (variantFlavor) {
+    case "warmer":
+      variantInstructions =
+        "Lean extra warm and human. Show sincere appreciation and empathy while staying concise.";
+      break;
+    case "shorter":
+      variantInstructions =
+        "Keep the reply very short and direct (1–2 concise sentences). Do not repeat the entire complaint.";
+      break;
+    case "more_professional":
+      variantInstructions =
+        "Use a more formal, polished tone suitable for a fine-dining or corporate brand.";
+      break;
+    case "base":
+    default:
+      // no extra instructions
+      break;
+  }
+
   const sg = styleGuide
     ? `\n\nBrand Voice Style Guide (follow closely):\n${styleGuide}\n`
     : "";
 
   return `
-You are a professional community manager for a local café${business ? ` called "${business}"` : ""}${
-    city ? ` in ${city}` : ""
-  }. You will write a polished, brand-safe reply to a customer ${platform || "review"}.
+You are a professional community manager for a local café${
+    business ? ` called "${business}"` : ""
+  }${city ? ` in ${city}` : ""}. You will write a polished, brand-safe reply to a customer ${
+    platform || "review"
+  }.
 
 Constraints:
 - ${lenHint}
-- Reply in ${language || "English"} and a ${tone || "friendly, appreciative"} tone.
+- Reply in ${language || "English"} and a ${
+    tone || "friendly, appreciative"
+  } tone.
 - ${guardrails}
+- ${variantInstructions || "Keep it clear, human, and easy to paste as a reply."}
 ${sg}
 
-Customer review (rating: ${rating ?? "n/a"}, platform: ${platform || "n/a"}):
+Customer review (rating: ${rating ?? "n/a"}, platform: ${
+    platform || "n/a"
+  }):
 """
 ${reviewText}
 """
@@ -127,6 +162,20 @@ export async function POST(req: NextRequest) {
     // If auth fails for any reason, we just proceed without a style guide
   }
 
+  // Normalise / validate variant flavor (fallback to base)
+  const rawVariant = String(body?.variantFlavor ?? "base");
+  const allowedVariants: VariantFlavor[] = [
+    "base",
+    "warmer",
+    "shorter",
+    "more_professional",
+  ];
+  const variantFlavor = allowedVariants.includes(
+    rawVariant as VariantFlavor
+  )
+    ? (rawVariant as VariantFlavor)
+    : "base";
+
   const prompt = buildReplyPrompt({
     reviewText,
     rating: body?.rating ?? null,
@@ -140,6 +189,7 @@ export async function POST(req: NextRequest) {
     policy_offer_remedy_if_low: body?.policy_offer_remedy_if_low ?? true,
     language: body?.language ?? "English",
     styleGuide,
+    variantFlavor,
   });
 
   // Call Responses API

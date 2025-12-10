@@ -1,6 +1,9 @@
 "use client";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 const links = [
   { href: "/", label: "Home" },
@@ -11,10 +14,21 @@ const links = [
 
 export default function Nav() {
   const pathname = usePathname();
+  const [user, setUser] = useState<any>(null);
+
+  // Load Supabase session on the client
+  useEffect(() => {
+    const supabase = createClientComponentClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user ?? null);
+    });
+  }, []);
+
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         <div className="text-sm font-semibold tracking-wide">TurnTable AI</div>
+
         <nav className="flex items-center gap-2">
           {links.map((l) => {
             const active = pathname === l.href;
@@ -23,13 +37,29 @@ export default function Nav() {
                 key={l.href}
                 href={l.href}
                 className={`rounded-md px-3 py-1.5 text-sm transition hover:scale-[1.02] active:scale-[0.98] ${
-                  active ? "bg-white/10 font-medium text-white" : "text-white/70 hover:bg-white/5"
+                  active
+                    ? "bg-white/10 font-medium text-white"
+                    : "text-white/70 hover:bg-white/5"
                 }`}
               >
                 {l.label}
               </Link>
             );
           })}
+
+          {/* 🔥 Only show Integrations if signed in */}
+          {user && (
+            <Link
+              href="/integrations"
+              className={`rounded-md px-3 py-1.5 text-sm transition hover:scale-[1.02] active:scale-[0.98] ${
+                pathname === "/integrations"
+                  ? "bg-white/10 font-medium text-white"
+                  : "text-white/70 hover:bg-white/5"
+              }`}
+            >
+              Integrations
+            </Link>
+          )}
         </nav>
       </div>
     </header>
