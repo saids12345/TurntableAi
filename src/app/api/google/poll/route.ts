@@ -1,6 +1,10 @@
 // src/app/api/google/poll/route.ts
 import { NextResponse } from "next/server";
-import { getConnByUser, setLastSeen, upsertReviews } from "@/lib/store";
+import {
+  getAllGoogleConns,
+  setLastSeen,
+  upsertReviews,
+} from "@/lib/store";
 import { listReviews, refreshToken, starToNumber } from "@/lib/google";
 import { sendReviewEmail } from "@/lib/email";
 
@@ -17,138 +21,169 @@ function getBaseUrl(): string {
 }
 
 /**
- * Polls Google Business Profile for new reviews for the user, emails alerts,
- * and upserts the reviews into public.reviews.
+ * Multi-tenant Google review poller.
  *
- * NOTE: currently uses a hard-coded userId="demo".
- * Later we'll replace that with real auth user ids / all connections.
+ * - Finds ALL users who have a Google Business connection.
+ * - For each user + each location:
+ *    - fetches new reviews since lastSeen
+ *    - generates an AI draft reply
+ *    - emails that user
+ *    - upserts reviews into public.reviews
+ *
+ * This is what your cron job hits via /api/cron/gmail-yelp → /api/google/poll
  */
 export async function POST() {
-  const userId = "demo"; // TODO (Step 2): replace with signed-in user id(s)
-  const conn = await getConnByUser(userId);
+  const baseUrl = getBaseUrl();
 
-  if (!conn) {
+  // 1) Load all Google connections (one per user)
+  const conns = await getAllGoogleConns(); // GoogleConn[]
+  if (!conns.length) {
     return NextResponse.json({
       ok: true,
-      message: "No Google connection.",
+      message: "No Google connections configured.",
+      sent: 0,
+      saved: 0,
     });
   }
 
-  // Refresh access token if we have a refresh_token
-  if (conn.tokens.refresh_token) {
-    try {
-      const r = await refreshToken(conn.tokens.refresh_token);
-      conn.tokens.access_token = r.access_token;
-    } catch (e) {
-      console.warn("token refresh failed", e);
+  let totalSent = 0;
+  let totalSaved = 0;
+
+  // 2) Process each user independently
+  for (const conn of conns) {
+    const userId = conn.userId;
+    const newLastSeen: Record<string, string> = {};
+    let sent = 0;
+    let saved = 0;
+
+    // Safety: if a connection is missing basics, skip it
+    if (!conn?.tokens?.access_token || !Array.isArray(conn.locations)) {
+      console.warn("Skipping Google conn with missing data", { userId });
+      continue;
     }
-  }
 
-  const baseUrl = getBaseUrl();
-  let sent = 0;
-  let saved = 0;
-  const newLastSeen: Record<string, string> = {};
+    // Refresh access token if we have a refresh_token
+    if (conn.tokens.refresh_token) {
+      try {
+        const r = await refreshToken(conn.tokens.refresh_token);
+        conn.tokens.access_token = r.access_token;
+      } catch (e) {
+        console.warn("token refresh failed for user", userId, e);
+      }
+    }
 
-  for (const loc of conn.locations) {
-    try {
-      const res = await listReviews(conn.tokens.access_token, loc.name);
-      const last = conn.lastSeenByLocation?.[loc.name];
+    for (const loc of conn.locations) {
+      try {
+        const res = await listReviews(conn.tokens.access_token, loc.name);
+        const last = conn.lastSeenByLocation?.[loc.name];
 
-      // Only the new ones since last time
-      const fresh = (res.reviews || []).filter(
-        (r) => r.updateTime && (!last || r.updateTime > last)
-      );
+        // Only the new ones since last time
+        const fresh = (res.reviews || []).filter(
+          (r) => r.updateTime && (!last || r.updateTime > last)
+        );
 
-      // newest → oldest for nicer email ordering
-      fresh.sort((a, b) => (a.updateTime! < b.updateTime! ? 1 : -1));
+        // newest → oldest for nicer email ordering
+        fresh.sort((a, b) => (a.updateTime! < b.updateTime! ? 1 : -1));
 
-      // 1) Email alerts (+ AI auto-drafts)
-      for (const r of fresh) {
-        const rating = starToNumber(r.starRating) ?? null;
-        const reviewText = r.comment || "";
+        // === 1) Email alerts (+ AI auto-drafts) ===
+        for (const r of fresh) {
+          const rating = starToNumber(r.starRating) ?? null;
+          const reviewText = r.comment || "";
 
-        // --- call your AI reply generator ---
-        let aiReply: string | null = null;
-        try {
-          const aiRes = await fetch(`${baseUrl}/api/review-reply`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              reviewText,
-              rating,
-              platform: "Google",
-              tone: "Friendly",
-              business: loc.title,
-              city: null,
-              length: "medium",
-              policy_apologize: true,
-              policy_no_admission: true,
-              policy_offer_remedy_if_low: true,
-              language: "English",
-            }),
+          // --- call your AI reply generator ---
+          let aiReply: string | null = null;
+          try {
+            const aiRes = await fetch(`${baseUrl}/api/review-reply`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reviewText,
+                rating,
+                platform: "Google",
+                tone: "Friendly",
+                business: loc.title,
+                city: null,
+                length: "medium",
+                policy_apologize: true,
+                policy_no_admission: true,
+                policy_offer_remedy_if_low: true,
+                language: "English",
+              }),
+            });
+
+            const aiData: any = await aiRes.json().catch(() => ({}));
+
+            if (
+              aiRes.ok &&
+              typeof aiData?.reply === "string" &&
+              aiData.reply.trim()
+            ) {
+              aiReply = aiData.reply.trim();
+            }
+          } catch (err) {
+            console.error("AI reply generation failed:", err);
+          }
+
+          // Send email to THIS owner only
+          await sendReviewEmail({
+            to: conn.email, // per-user email from connection
+            platform: "Google",
+            locationName: loc.title,
+            rating: rating ?? undefined,
+            reviewText,
+            reviewer: r.reviewer?.displayName ?? undefined,
+            createdTime: r.createTime ?? undefined,
+            aiReply: aiReply ?? undefined,
           });
 
-          const aiData: any = await aiRes.json().catch(() => ({}));
-
-          if (
-            aiRes.ok &&
-            typeof aiData?.reply === "string" &&
-            aiData.reply.trim()
-          ) {
-            aiReply = aiData.reply.trim();
-          }
-        } catch (err) {
-          console.error("AI reply generation failed:", err);
+          sent++;
+          // gentle throttle to play nice with email provider / Google
+          await new Promise((res) => setTimeout(res, 200));
         }
 
-        await sendReviewEmail({
-          to: conn.email,
-          platform: "Google",
-          locationName: loc.title,
-          rating: rating ?? undefined,
-          reviewText,
-          reviewer: r.reviewer?.displayName ?? undefined,
-          createdTime: r.createTime ?? undefined,
-          aiReply: aiReply ?? undefined,
-        });
+        // === 2) Persist to DB ===
+        if (fresh.length) {
+          const payload = fresh.map((r) => ({
+            userId,
+            provider: "google" as const,
+            providerReviewId: (r.name || r.reviewId || "").toString(),
+            locationName: loc.name,
+            rating: starToNumber(r.starRating) ?? null,
+            text: r.comment ?? null,
+            author: r.reviewer?.displayName ?? null,
+            createTime: r.createTime ?? null,
+            updateTime: r.updateTime ?? null,
+            raw: r, // keep full provider payload for debugging
+          }));
 
-        sent++;
-        // gentle throttle to play nice with email provider / Google
-        await new Promise((res) => setTimeout(res, 200));
+          const result = await upsertReviews(payload);
+          saved += result.upserted;
+        }
+
+        // advance the high-water mark for this location
+        const newestUpdate =
+          res.reviews?.[0]?.updateTime || last || new Date().toISOString();
+        newLastSeen[loc.name] = newestUpdate;
+      } catch (e) {
+        console.error("poll error for user/location", { userId, loc: loc.name }, e);
       }
-
-      // 2) Persist to DB
-      if (fresh.length) {
-        const payload = fresh.map((r) => ({
-          userId,
-          provider: "google" as const,
-          providerReviewId: (r.name || r.reviewId || "").toString(),
-          locationName: loc.name,
-          rating: starToNumber(r.starRating) ?? null,
-          text: r.comment ?? null,
-          author: r.reviewer?.displayName ?? null,
-          createTime: r.createTime ?? null,
-          updateTime: r.updateTime ?? null,
-          raw: r, // keep full provider payload for debugging
-        }));
-
-        const result = await upsertReviews(payload);
-        saved += result.upserted;
-      }
-
-      // advance the high-water mark
-      const newestUpdate =
-        res.reviews?.[0]?.updateTime || last || new Date().toISOString();
-      newLastSeen[loc.name] = newestUpdate;
-    } catch (e) {
-      console.error("poll error for", loc.name, e);
     }
+
+    // Persist lastSeen for this user
+    if (Object.keys(newLastSeen).length) {
+      await setLastSeen(userId, newLastSeen);
+    }
+
+    totalSent += sent;
+    totalSaved += saved;
   }
 
-  if (Object.keys(newLastSeen).length) {
-    await setLastSeen(userId, newLastSeen);
-  }
-
-  return NextResponse.json({ ok: true, sent, saved });
+  return NextResponse.json({
+    ok: true,
+    sent: totalSent,
+    saved: totalSaved,
+  });
 }
+
+// Allow GET for manual tests
 export const GET = POST;

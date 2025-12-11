@@ -74,7 +74,10 @@ export async function upsertConn(input: {
     if (upd.error) throw upd.error;
 
     // Replace locations
-    const del = await db.from("review_locations").delete().eq("connection_id", connId);
+    const del = await db
+      .from("review_locations")
+      .delete()
+      .eq("connection_id", connId);
     if (del.error) throw del.error;
   } else {
     // Insert fresh
@@ -111,12 +114,13 @@ export async function upsertConn(input: {
 }
 
 /**
- * Read a user's google connection (with locations).
+ * Read a single user's google connection (with locations).
  */
-export async function getConnByUser(userId: string): Promise<GoogleConn | null> {
+export async function getConnByUser(
+  userId: string
+): Promise<GoogleConn | null> {
   const db = supabaseServer();
 
-  // If a FK relation exists, Supabase can expand review_locations via select path.
   const res = await db
     .from("review_connections")
     .select(
@@ -149,9 +153,43 @@ export async function getConnByUser(userId: string): Promise<GoogleConn | null> 
 }
 
 /**
+ * 🔥 NEW: Read **all** google connections (multi-tenant).
+ * Used by the cron job so we can poll reviews for every connected user.
+ */
+export async function getAllGoogleConns(): Promise<GoogleConn[]> {
+  const db = supabaseServer();
+
+  const res = await db
+    .from("review_connections")
+    .select(
+      "id,user_id,email,account_name,tokens,last_seen_by_location,review_locations(id,name,title)"
+    )
+    .eq("provider", "google");
+
+  if (res.error) throw res.error;
+
+  return (res.data || []).map((c: any) => ({
+    id: c.id,
+    userId: c.user_id,
+    email: c.email,
+    accountName: c.account_name ?? undefined,
+    tokens: c.tokens as ProviderTokens,
+    lastSeenByLocation: c.last_seen_by_location ?? {},
+    locations: (c.review_locations || []).map((l: any) => ({
+      id: l.id,
+      name: l.name,
+      title: l.title,
+    })),
+  }));
+}
+
+/**
  * Merge + persist new last-seen timestamps per location for a user's connection.
  */
-export async function setLastSeen(userId: string, updates: Record<string, string>) {
+export async function setLastSeen(
+  userId: string,
+  updates: Record<string, string>
+) {
   const db = supabaseServer();
 
   const ex = await db
@@ -183,16 +221,16 @@ export async function setLastSeen(userId: string, updates: Record<string, string
 ============================================================================ */
 
 type UpsertReviewInput = {
-  userId: string;                 // owner in your app (supabase auth user id)
-  locationName: string;           // provider location resource name (e.g., "locations/123")
-  provider: ProviderName;         // "google"
-  providerReviewId: string;       // stable id from provider (e.g., reviewId or name)
-  rating?: number | null;         // 1..5
+  userId: string; // owner in your app (supabase auth user id)
+  locationName: string; // provider location resource name (e.g., "locations/123")
+  provider: ProviderName; // "google"
+  providerReviewId: string; // stable id from provider (e.g., reviewId or name)
+  rating?: number | null; // 1..5
   text?: string | null;
   author?: string | null;
-  createTime?: string | null;     // ISO
-  updateTime?: string | null;     // ISO
-  raw?: any;                      // full provider payload for debugging
+  createTime?: string | null; // ISO
+  updateTime?: string | null; // ISO
+  raw?: any; // full provider payload for debugging
 };
 
 /**
@@ -203,24 +241,21 @@ export async function upsertReviews(rows: UpsertReviewInput[]) {
 
   const db = supabaseServer();
 
-  const { error } = await db
-    .from("reviews")
-    .upsert(
-      rows.map((r) => ({
-        user_id: r.userId,
-        provider: r.provider,
-        provider_review_id: r.providerReviewId,
-        location_name: r.locationName,
-        rating: r.rating ?? null,
-        text: r.text ?? null,
-        author: r.author ?? null,
-        create_time: r.createTime ?? null,
-        update_time: r.updateTime ?? null,
-        raw: r.raw ?? null,
-      })),
-      // This matches the constraint we created in SQL:
-      { onConflict: "provider,provider_review_id" }
-    );
+  const { error } = await db.from("reviews").upsert(
+    rows.map((r) => ({
+      user_id: r.userId,
+      provider: r.provider,
+      provider_review_id: r.providerReviewId,
+      location_name: r.locationName,
+      rating: r.rating ?? null,
+      text: r.text ?? null,
+      author: r.author ?? null,
+      create_time: r.createTime ?? null,
+      update_time: r.updateTime ?? null,
+      raw: r.raw ?? null,
+    })),
+    { onConflict: "provider,provider_review_id" }
+  );
 
   if (error) throw error;
   return { upserted: rows.length };

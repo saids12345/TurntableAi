@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
   // 3) Decide whether to send an email
   const shouldSendEmail = testMode || saved > 0;
 
-  let emailStatus: {
+  const emailStatus: {
     attempted: boolean;
     sent?: boolean;
     error?: string;

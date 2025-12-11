@@ -32,9 +32,7 @@ export default function ReviewInboxModal({
   currentPlatform,
   onSelect,
 }: Props) {
-  // Don’t render anything if the modal is closed
-  if (!open) return null;
-
+  // Hooks must be called before any early returns
   const filteredItems = useMemo(
     () =>
       items.filter((item) =>
@@ -42,6 +40,9 @@ export default function ReviewInboxModal({
       ),
     [items, currentPlatform]
   );
+
+  // Don't render anything if the modal is closed
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-3 pb-6 sm:items-center">
