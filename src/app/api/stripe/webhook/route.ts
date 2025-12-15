@@ -1,10 +1,26 @@
 // src/app/api/stripe/webhook/route.ts
 import Stripe from "stripe";
+import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { planFromStripeStatus, isProFromPlan } from "@/lib/plans";
 
 export const runtime = "nodejs";
+
+// ✅ TEMP DEBUG: proves the route is deployed on production
+export async function GET() {
+  return NextResponse.json(
+    {
+      ok: true,
+      route: "/api/stripe/webhook",
+      message:
+        "GET works → this deployment contains the webhook route. POST should not 404 anymore.",
+      vercelCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+      time: new Date().toISOString(),
+    },
+    { status: 200 }
+  );
+}
 
 async function upsertProfileByCustomer(params: {
   customerId: string;
@@ -68,18 +84,18 @@ export async function POST(req: Request) {
           subscriptionId: sub.id,
           subscriptionStatus: sub.status,
           currentPeriodEnd: (sub as any).current_period_end ?? null,
-
         });
 
         break;
       }
 
       case "checkout.session.completed": {
-        // Optional helper for first-time checkout
         const session = event.data.object as Stripe.Checkout.Session;
 
         const customerId =
-          typeof session.customer === "string" ? session.customer : session.customer?.id;
+          typeof session.customer === "string"
+            ? session.customer
+            : session.customer?.id;
 
         if (customerId) {
           await upsertProfileByCustomer({
@@ -93,7 +109,6 @@ export async function POST(req: Request) {
       }
 
       default:
-        // ignore other events
         break;
     }
 
