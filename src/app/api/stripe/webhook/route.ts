@@ -7,7 +7,17 @@ import { planFromStripeStatus, isProFromPlan } from "@/lib/plans";
 
 export const runtime = "nodejs";
 
-// ✅ TEMP DEBUG: proves the route is deployed on production
+/**
+ * Important on Vercel/Next:
+ * - Ensures this route is always treated as a dynamic server route
+ * - Avoids accidental static optimization / route not included behavior
+ */
+export const dynamic = "force-dynamic";
+
+/**
+ * ✅ TEMP DEBUG: proves the route is deployed on production
+ * You can remove later.
+ */
 export async function GET() {
   return NextResponse.json(
     {
@@ -43,21 +53,38 @@ async function upsertProfileByCustomer(params: {
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await supabaseAdmin
-    .from("profiles")
-    .update(update)
-    .eq("stripe_customer_id", params.customerId);
+  // Try updating by stripe_customer_id (your original approach)
+  const { data: updatedByCustomer, error: updateByCustomerError } =
+    await supabaseAdmin
+      .from("profiles")
+      .update(update)
+      .eq("stripe_customer_id", params.customerId)
+      .select("id")
+      .maybeSingle();
 
-  if (error) throw error;
+  if (updateByCustomerError) throw updateByCustomerError;
+
+  // If no row matched, we can't update anything yet.
+  // This is common if the profile row exists but stripe_customer_id has not been written yet.
+  if (!updatedByCustomer) {
+    // No-op (or you can choose to insert a row if that's your desired behavior)
+    // If you want to link by email later, you'd do it here.
+    return;
+  }
 }
 
 export async function POST(req: Request) {
   const whsec = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!whsec) return new Response("Missing STRIPE_WEBHOOK_SECRET", { status: 500 });
+  if (!whsec) {
+    return new Response("Missing STRIPE_WEBHOOK_SECRET", { status: 500 });
+  }
 
   const sig = req.headers.get("stripe-signature");
-  if (!sig) return new Response("Missing stripe-signature header", { status: 400 });
+  if (!sig) {
+    return new Response("Missing stripe-signature header", { status: 400 });
+  }
 
+  // MUST be raw text for Stripe signature verification
   const payload = await req.text();
 
   let event: Stripe.Event;
@@ -97,7 +124,14 @@ export async function POST(req: Request) {
             ? session.customer
             : session.customer?.id;
 
+        // If you want, you can also store session.subscription here:
+        // const subscriptionId =
+        //   typeof session.subscription === "string"
+        //     ? session.subscription
+        //     : session.subscription?.id ?? null;
+
         if (customerId) {
+          // This "active" write is a helper; real plan comes from subscription webhook
           await upsertProfileByCustomer({
             customerId,
             subscriptionId: null,
@@ -105,10 +139,12 @@ export async function POST(req: Request) {
             currentPeriodEnd: null,
           });
         }
+
         break;
       }
 
       default:
+        // ignore other events
         break;
     }
 
