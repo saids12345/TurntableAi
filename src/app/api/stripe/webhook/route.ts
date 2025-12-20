@@ -2,22 +2,12 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { planFromStripeStatus, isProFromPlan } from "@/lib/plans";
 
 export const runtime = "nodejs";
-
-/**
- * Important on Vercel/Next:
- * - Ensures this route is always treated as a dynamic server route
- * - Avoids accidental static optimization / route not included behavior
- */
 export const dynamic = "force-dynamic";
 
-/**
- * ✅ TEMP DEBUG: proves the route is deployed on production
- * You can remove later.
- */
 export async function GET() {
   return NextResponse.json(
     {
@@ -32,12 +22,19 @@ export async function GET() {
   );
 }
 
+function log(message: string, data?: any) {
+  if (data) console.log(`[stripe-webhook] ${message}`, data);
+  else console.log(`[stripe-webhook] ${message}`);
+}
+
 async function upsertProfileByCustomer(params: {
   customerId: string;
   subscriptionId?: string | null;
   subscriptionStatus?: string | null;
   currentPeriodEnd?: number | null; // unix seconds
 }) {
+  const supabaseAdmin = getSupabaseAdmin();
+
   const plan = planFromStripeStatus(params.subscriptionStatus ?? null);
   const is_pro = isProFromPlan(plan);
 
@@ -53,38 +50,36 @@ async function upsertProfileByCustomer(params: {
     updated_at: new Date().toISOString(),
   };
 
-  // Try updating by stripe_customer_id (your original approach)
-  const { data: updatedByCustomer, error: updateByCustomerError } =
-    await supabaseAdmin
-      .from("profiles")
-      .update(update)
-      .eq("stripe_customer_id", params.customerId)
-      .select("id")
-      .maybeSingle();
+  const { data: updatedByCustomer, error } = await supabaseAdmin
+    .from("profiles")
+    .update(update)
+    .eq("stripe_customer_id", params.customerId)
+    .select("id")
+    .maybeSingle();
 
-  if (updateByCustomerError) throw updateByCustomerError;
+  if (error) throw error;
 
-  // If no row matched, we can't update anything yet.
-  // This is common if the profile row exists but stripe_customer_id has not been written yet.
   if (!updatedByCustomer) {
-    // No-op (or you can choose to insert a row if that's your desired behavior)
-    // If you want to link by email later, you'd do it here.
+    log("No profile matched stripe_customer_id (no-op)", {
+      customerId: params.customerId,
+    });
     return;
   }
+
+  log("Updated profile by stripe_customer_id", {
+    customerId: params.customerId,
+    plan,
+    is_pro,
+  });
 }
 
 export async function POST(req: Request) {
   const whsec = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!whsec) {
-    return new Response("Missing STRIPE_WEBHOOK_SECRET", { status: 500 });
-  }
+  if (!whsec) return new Response("Missing STRIPE_WEBHOOK_SECRET", { status: 500 });
 
   const sig = req.headers.get("stripe-signature");
-  if (!sig) {
-    return new Response("Missing stripe-signature header", { status: 400 });
-  }
+  if (!sig) return new Response("Missing stripe-signature header", { status: 400 });
 
-  // MUST be raw text for Stripe signature verification
   const payload = await req.text();
 
   let event: Stripe.Event;
@@ -97,6 +92,8 @@ export async function POST(req: Request) {
   }
 
   try {
+    log("Received event", { type: event.type, id: event.id });
+
     switch (event.type) {
       case "customer.subscription.created":
       case "customer.subscription.updated":
@@ -124,17 +121,15 @@ export async function POST(req: Request) {
             ? session.customer
             : session.customer?.id;
 
-        // If you want, you can also store session.subscription here:
-        // const subscriptionId =
-        //   typeof session.subscription === "string"
-        //     ? session.subscription
-        //     : session.subscription?.id ?? null;
+        const subscriptionId =
+          typeof session.subscription === "string"
+            ? session.subscription
+            : session.subscription?.id ?? null;
 
         if (customerId) {
-          // This "active" write is a helper; real plan comes from subscription webhook
           await upsertProfileByCustomer({
             customerId,
-            subscriptionId: null,
+            subscriptionId,
             subscriptionStatus: "active",
             currentPeriodEnd: null,
           });
@@ -143,13 +138,49 @@ export async function POST(req: Request) {
         break;
       }
 
+      case "invoice.payment_succeeded": {
+        const invoice = event.data.object as Stripe.Invoice;
+
+        // Some Stripe typings versions don't include invoice.subscription,
+        // so we safely read it via `any` to avoid TS errors.
+        const anyInvoice = invoice as any;
+
+        const customerId =
+          typeof invoice.customer === "string" ? invoice.customer : null;
+
+        const subscriptionId =
+          typeof anyInvoice.subscription === "string"
+            ? anyInvoice.subscription
+            : anyInvoice.subscription?.id ?? null;
+
+        log("Handling invoice.payment_succeeded", {
+          customerId,
+          subscriptionId,
+          paid: (invoice as any).paid,
+          status: (invoice as any).status,
+        });
+
+        if (customerId && subscriptionId) {
+          const sub = await stripe.subscriptions.retrieve(subscriptionId);
+
+          await upsertProfileByCustomer({
+            customerId,
+            subscriptionId: sub.id,
+            subscriptionStatus: sub.status,
+            currentPeriodEnd: (sub as any).current_period_end ?? null,
+          });
+        }
+
+        break;
+      }
+
       default:
-        // ignore other events
         break;
     }
 
     return new Response("ok", { status: 200 });
   } catch (err: any) {
+    log("Webhook handler failed", { message: err?.message, stack: err?.stack });
     return new Response(`Webhook handler failed: ${err?.message ?? "Unknown"}`, {
       status: 500,
     });
