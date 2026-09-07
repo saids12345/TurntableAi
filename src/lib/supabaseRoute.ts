@@ -1,20 +1,22 @@
 // src/lib/supabaseRoute.ts
-import { cookies as nextCookies } from "next/headers";
-import { createRouteHandlerClient, SupabaseClient } from "@supabase/auth-helpers-nextjs";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-/**
- * Returns a Supabase client for Route Handlers (app/api/*).
- * Next 15 requires awaiting `cookies()`.
- */
-export async function getSupabaseRouteClient(): Promise<SupabaseClient> {
-  // Grab the request cookie store for this route handler invocation.
-  const cookieStore = await nextCookies();
+export async function getSupabaseRouteClient() {
+  const cookieStore = await cookies();
 
-  const client = createRouteHandlerClient({
-    // Cast to any to paper over the type mismatch (runtime behavior is correct).
-    cookies: () => cookieStore as any,
-  });
-
-  // Cast to SupabaseClient so callers get good IntelliSense.
-  return client as unknown as SupabaseClient;
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        // Route handlers that only READ auth don't need to write cookies
+        set() {},
+        remove() {},
+      },
+    }
+  );
 }

@@ -2,20 +2,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
-// Read envs once
-const GMAIL_YELP_CLIENT_ID = process.env.GMAIL_YELP_CLIENT_ID!;
-const GMAIL_YELP_CLIENT_SECRET = process.env.GMAIL_YELP_CLIENT_SECRET!;
-const GMAIL_YELP_REDIRECT_URI = process.env.GMAIL_YELP_REDIRECT_URI!;
+
+// Read envs once (but don't crash at import-time)
+const GMAIL_YELP_CLIENT_ID = process.env.GMAIL_YELP_CLIENT_ID;
+const GMAIL_YELP_CLIENT_SECRET = process.env.GMAIL_YELP_CLIENT_SECRET;
+const GMAIL_YELP_REDIRECT_URI = process.env.GMAIL_YELP_REDIRECT_URI;
+
 const NEXT_PUBLIC_SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 function jsonError(
   message: string,
   status: number = 500,
-  extra: Record<string, unknown> = {},
+  extra: Record<string, unknown> = {}
 ) {
   console.error("[gmail-yelp-callback]", message, extra);
   return NextResponse.json({ error: message, ...extra }, { status });
+}
+
+/**
+ * Decode base64url encoded state.
+ * Returns null if invalid.
+ */
+function base64UrlDecode<T = any>(s: string): T | null {
+  try {
+    const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64.length % 4 ? "=".repeat(4 - (b64.length % 4)) : "";
+    const json = Buffer.from(b64 + pad, "base64").toString("utf8");
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -24,6 +41,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const code = searchParams.get("code");
     const error = searchParams.get("error");
+    const state = searchParams.get("state"); // we set this in /start
 
     if (error) {
       return jsonError("google_returned_error", 400, { provider_error: error });
@@ -33,7 +51,7 @@ export async function GET(req: NextRequest) {
       return jsonError("missing_code_param", 400);
     }
 
-    // 2) Get signed-in Supabase user (via helper)
+    // 2) Get signed-in Supabase user
     const supabase = await getSupabaseRouteClient();
     const { data, error: userError } = await supabase.auth.getUser();
 
@@ -43,8 +61,53 @@ export async function GET(req: NextRequest) {
 
     const userId = data.user.id;
 
+    // 🔒 Pro lock. Redirect instead of JSON.
+const { data: profile } = await supabase
+  .from("profiles")
+  .select("is_pro, plan")
+  .eq("id", userId)
+  .maybeSingle();
+
+const isPro =
+  !!profile?.is_pro ||
+  profile?.plan === "pro";
+
+if (!isPro) {
+  const current = new URL(req.url);
+
+  const redirectPath =
+    `${current.pathname}${current.search}`;
+
+  return NextResponse.redirect(
+    new URL(
+      `/upgrade?redirect=${encodeURIComponent(redirectPath)}`,
+      current.origin,
+    ),
+  );
+}
+
+    // 2.5) Validate OAuth state (CSRF protection)
+    // We encoded { u: userId } in /start. Verify it matches.
+    if (state) {
+      const decoded = base64UrlDecode<{ u?: string }>(state);
+      if (!decoded?.u || decoded.u !== userId) {
+        return jsonError("invalid_oauth_state", 400, {
+          expectedUser: userId,
+          stateUser: decoded?.u ?? null,
+        });
+      }
+    } else {
+      // If you want to be strict, you can error here.
+      // We'll allow it but log it.
+      console.warn("[gmail-yelp-callback] Missing state param (CSRF protection weakened)");
+    }
+
     // 3) Exchange code for tokens with Google
-    if (!GMAIL_YELP_CLIENT_ID || !GMAIL_YELP_CLIENT_SECRET || !GMAIL_YELP_REDIRECT_URI) {
+    if (
+      !GMAIL_YELP_CLIENT_ID ||
+      !GMAIL_YELP_CLIENT_SECRET ||
+      !GMAIL_YELP_REDIRECT_URI
+    ) {
       return jsonError("missing_gmail_yelp_env_vars", 500, {
         hasClientId: !!GMAIL_YELP_CLIENT_ID,
         hasSecret: !!GMAIL_YELP_CLIENT_SECRET,
@@ -74,11 +137,38 @@ export async function GET(req: NextRequest) {
 
     const tokenJson: any = await tokenRes.json();
     const accessToken: string | undefined = tokenJson.access_token;
-    const refreshToken: string | undefined = tokenJson.refresh_token;
+    let refreshToken: string | undefined = tokenJson.refresh_token;
     const expiresIn: number | undefined = tokenJson.expires_in;
 
-    if (!accessToken || !refreshToken) {
-      return jsonError("missing_tokens_in_response", 500, { tokenJson });
+    if (!accessToken) {
+      return jsonError("missing_access_token_in_response", 500, { tokenJson });
+    }
+
+    // If refresh_token is not returned (common on re-consent), reuse existing.
+    if (!refreshToken) {
+      const { data: existing, error: existingErr } = await supabase
+        .from("gmail_yelp_tokens")
+        .select("refresh_token")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (existingErr) {
+        return jsonError("failed_to_load_existing_refresh_token", 500, {
+          existingErr,
+        });
+      }
+
+      if (existing?.refresh_token) {
+        refreshToken = existing.refresh_token as string;
+      }
+    }
+
+    if (!refreshToken) {
+      // Still no refresh token — tell dev what happened.
+      return jsonError("missing_refresh_token_in_response", 500, {
+        hint: "Google may not return refresh_token on reconnect. Try disconnecting/revoking access and re-connecting with prompt=consent.",
+        tokenJson,
+      });
     }
 
     const expiresAt = expiresIn
@@ -86,17 +176,15 @@ export async function GET(req: NextRequest) {
       : null;
 
     // 4) Store tokens in Supabase (table: gmail_yelp_tokens)
-    const { error: upsertError } = await supabase
-      .from("gmail_yelp_tokens")
-      .upsert(
-        {
-          user_id: userId,
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          expires_at: expiresAt,
-        },
-        { onConflict: "user_id" },
-      );
+    const { error: upsertError } = await supabase.from("gmail_yelp_tokens").upsert(
+      {
+        user_id: userId,
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_at: expiresAt,
+      },
+      { onConflict: "user_id" }
+    );
 
     if (upsertError) {
       return jsonError("supabase_upsert_failed", 500, { upsertError });

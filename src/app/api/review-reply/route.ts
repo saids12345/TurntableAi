@@ -3,10 +3,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /** Normalize Responses API output into plain text */
 function extractText(resp: any): string {
@@ -22,11 +22,7 @@ function extractText(resp: any): string {
   return typeof text === "string" ? text.trim() : "";
 }
 
-type VariantFlavor =
-  | "base"
-  | "warmer"
-  | "shorter"
-  | "more_professional";
+type VariantFlavor = "base" | "warmer" | "shorter" | "more_professional";
 
 /** Build the system/prompt text for reply generation */
 function buildReplyPrompt(params: {
@@ -94,7 +90,6 @@ function buildReplyPrompt(params: {
       break;
     case "base":
     default:
-      // no extra instructions
       break;
   }
 
@@ -111,16 +106,12 @@ You are a professional community manager for a local café${
 
 Constraints:
 - ${lenHint}
-- Reply in ${language || "English"} and a ${
-    tone || "friendly, appreciative"
-  } tone.
+- Reply in ${language || "English"} and a ${tone || "friendly, appreciative"} tone.
 - ${guardrails}
 - ${variantInstructions || "Keep it clear, human, and easy to paste as a reply."}
 ${sg}
 
-Customer review (rating: ${rating ?? "n/a"}, platform: ${
-    platform || "n/a"
-  }):
+Customer review (rating: ${rating ?? "n/a"}, platform: ${platform || "n/a"}):
 """
 ${reviewText}
 """
@@ -130,6 +121,9 @@ Now write the reply only (no preface, no quotes).
 }
 
 export async function POST(req: NextRequest) {
+  // 🔒 Pro lock (trial or paid). Prevents bypassing the UI.
+  await requireProForApi();
+
   const body = await req.json().catch(() => ({} as any));
 
   // Basic input check
@@ -140,6 +134,13 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
+  }
+
+  const openai = new OpenAI({ apiKey });
 
   // Optional: fetch the user's saved voice style if logged in
   let styleGuide: string | null = null;
@@ -159,7 +160,7 @@ export async function POST(req: NextRequest) {
       if (data?.style_guide) styleGuide = data.style_guide as string;
     }
   } catch {
-    // If auth fails for any reason, we just proceed without a style guide
+    // If auth fails for any reason, proceed without a style guide
   }
 
   // Normalise / validate variant flavor (fallback to base)
@@ -170,9 +171,7 @@ export async function POST(req: NextRequest) {
     "shorter",
     "more_professional",
   ];
-  const variantFlavor = allowedVariants.includes(
-    rawVariant as VariantFlavor
-  )
+  const variantFlavor = allowedVariants.includes(rawVariant as VariantFlavor)
     ? (rawVariant as VariantFlavor)
     : "base";
 
@@ -198,10 +197,8 @@ export async function POST(req: NextRequest) {
     input: prompt,
   });
 
-  // ✅ Normalize output & avoid TS type errors
   const reply =
-    extractText(ai) ||
-    "Thanks so much for your feedback — we appreciate you!";
+    extractText(ai) || "Thanks so much for your feedback — we appreciate you!";
 
   return NextResponse.json({ reply });
 }

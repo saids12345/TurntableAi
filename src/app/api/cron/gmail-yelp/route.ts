@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const CRON_SECRET = process.env.CRON_SECRET;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const ALERT_FROM_EMAIL = process.env.ALERT_FROM_EMAIL;
@@ -21,46 +24,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Call /api/google/poll with simple retry logic
-async function callGooglePollWithRetry(maxAttempts = 3) {
-  const url = `${getBaseUrl()}/api/google/poll`;
-
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        // If /api/google/poll is using the App Router,
-        // this keeps it from being cached.
-        cache: "no-store",
-      });
-
-      if (!res.ok) {
-        throw new Error(`google/poll responded with ${res.status}`);
-      }
-
-      const json = await res.json();
-      return { ok: true, json };
-    } catch (err) {
-      lastError = err;
-
-      // If it's the last attempt, bubble the error
-      if (attempt === maxAttempts) {
-        break;
-      }
-
-      // Backoff: 1s, 2s, 3s...
-      await sleep(attempt * 1000);
-    }
-  }
-
-  return { ok: false, error: lastError };
-}
-
 // Optional: allow forcing an email for testing with ?test=1
 function isTestRequest(req: NextRequest): boolean {
   try {
@@ -71,14 +34,53 @@ function isTestRequest(req: NextRequest): boolean {
   }
 }
 
+// Call /api/google/poll with simple retry logic
+async function callGooglePollWithRetry(maxAttempts = 3) {
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}/api/google/poll`;
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // ✅ forward cron secret so /api/google/poll can be secret-protected too
+          ...(CRON_SECRET ? { "x-cron-secret": CRON_SECRET } : {}),
+        },
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`google/poll responded ${res.status}: ${body || "(no body)"}`);
+      }
+
+      const json = await res.json().catch(() => ({}));
+      return { ok: true, json };
+    } catch (err) {
+      lastError = err;
+
+      if (attempt === maxAttempts) break;
+
+      // Backoff: 1s, 2s, 3s...
+      await sleep(attempt * 1000);
+    }
+  }
+
+  return { ok: false, error: lastError };
+}
+
 export async function POST(req: NextRequest) {
-  // 1) Check cron secret
+  // 1) Check cron secret (protect this route)
   const incomingSecret = req.headers.get("x-cron-secret");
 
   if (!CRON_SECRET || incomingSecret !== CRON_SECRET) {
     return NextResponse.json(
       { ok: false, error: "Unauthorized cron request" },
-      { status: 401 },
+      { status: 401 }
     );
   }
 
@@ -97,22 +99,27 @@ export async function POST(req: NextRequest) {
             ? pollResult.error.message
             : String(pollResult.error),
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 
-  const pollJson = pollResult.json as any;
-  const inner = pollJson?.result ?? {};
-  const saved = typeof inner.saved === "number" ? inner.saved : 0;
+  const pollJson: any = pollResult.json ?? {};
+
+  // ✅ /api/google/poll returns { ok, sent, saved }
+  // but keep a fallback in case older shape exists
+  const saved =
+    typeof pollJson?.saved === "number"
+      ? pollJson.saved
+      : typeof pollJson?.result?.saved === "number"
+      ? pollJson.result.saved
+      : 0;
 
   // 3) Decide whether to send an email
   const shouldSendEmail = testMode || saved > 0;
 
-  const emailStatus: {
-    attempted: boolean;
-    sent?: boolean;
-    error?: string;
-  } = { attempted: false };
+  const emailStatus: { attempted: boolean; sent?: boolean; error?: string } = {
+    attempted: false,
+  };
 
   if (shouldSendEmail && RESEND_API_KEY && ALERT_FROM_EMAIL && ALERT_TO_EMAIL) {
     emailStatus.attempted = true;
@@ -131,10 +138,10 @@ export async function POST(req: NextRequest) {
       const reviewCountText = testMode
         ? "This is a TEST alert. No actual reviews were fetched."
         : saved === 0
-          ? "No new reviews were saved."
-          : `We just detected and saved <strong>${saved}</strong> new review${
-              saved === 1 ? "" : "s"
-            } from your connected accounts.`;
+        ? "No new reviews were saved."
+        : `We just detected and saved <strong>${saved}</strong> new review${
+            saved === 1 ? "" : "s"
+          } from your connected accounts.`;
 
       const html = `
         <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 16px;">
@@ -147,7 +154,7 @@ export async function POST(req: NextRequest) {
           </p>
 
           <p style="margin: 0 0 16px 0;">
-            <a href="https://turntableai.net/reviews" 
+            <a href="https://turntableai.net/reviews"
                style="background:#fbbf24;color:#111;padding:10px 16px;border-radius:999px;text-decoration:none;font-weight:600;">
               Open Reviews Inbox
             </a>
@@ -180,9 +187,9 @@ export async function POST(req: NextRequest) {
   // 4) Respond back with what happened
   return NextResponse.json({
     ok: true,
-    status: 200,
     polledFrom: `${getBaseUrl()}/api/google/poll`,
-    result: pollJson?.result ?? null,
+    result: pollJson,
+    saved,
     emailStatus,
     testMode,
   });
