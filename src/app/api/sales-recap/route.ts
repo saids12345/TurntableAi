@@ -1,6 +1,11 @@
+// src/app/api/sales-recap/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { requireProForApi } from "@/lib/requirePro";
 
 export async function POST(req: NextRequest) {
+  // 🔒 Pro lock (trial or paid users only)
+  await requireProForApi();
+
   try {
     const body = await req.json();
     const {
@@ -26,7 +31,12 @@ export async function POST(req: NextRequest) {
     } = body ?? {};
 
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "Missing OPENAI_API_KEY" },
+        { status: 500 }
+      );
+    }
 
     const sys = `You are an operator-minded restaurant analyst.
 Write concise, practical summaries for small cafes and coffee shops.
@@ -66,7 +76,10 @@ TASKS:
 
     const resp = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({
         model: "gpt-4.1-mini",
         input: [
@@ -80,16 +93,26 @@ TASKS:
       const text = await resp.text();
       return NextResponse.json({ error: text }, { status: 500 });
     }
+
     const data = await resp.json();
     const output: string =
       data.output_text ??
       (Array.isArray(data.output)
-        ? data.output.map((o: any) => (Array.isArray(o.content) ? o.content.map((c: any) => c.text).join("\n") : "")).join("\n")
+        ? data.output
+            .map((o: any) =>
+              Array.isArray(o.content)
+                ? o.content.map((c: any) => c.text).join("\n")
+                : ""
+            )
+            .join("\n")
         : "");
 
     return NextResponse.json({ output });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || "Server error" },
+      { status: 500 }
+    );
   }
 }
 

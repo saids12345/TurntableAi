@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
+
 // Pull env vars once at module level
 const GMAIL_YELP_CLIENT_ID = process.env.GMAIL_YELP_CLIENT_ID;
 const GMAIL_YELP_REDIRECT_URI = process.env.GMAIL_YELP_REDIRECT_URI;
@@ -49,6 +50,7 @@ function gmailOAuthUrl(state: string): string {
 /**
  * Starts Gmail OAuth for Yelp alerts.
  * - Requires a signed-in user (Supabase)
+ * - Requires Pro (trial or paid) to prevent free users from connecting
  * - Encodes the user id into `state` so we know who to attach tokens to
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -67,6 +69,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // 🔒 Pro lock. Redirect instead of returning JSON.
+const { data: profile } = await supabase
+  .from("profiles")
+  .select("is_pro, plan")
+  .eq("id", data.user.id)
+  .maybeSingle();
+
+const isPro =
+  !!profile?.is_pro ||
+  profile?.plan === "pro";
+
+if (!isPro) {
+  const current = new URL(req.url);
+  const redirectPath =
+    `${current.pathname}${current.search}`;
+
+  return NextResponse.redirect(
+    new URL(
+      `/upgrade?redirect=${encodeURIComponent(redirectPath)}`,
+      current.origin,
+    ),
+  );
+}
+
     const userId = data.user.id;
 
     // Put user id (and anything else we want later) into state
@@ -83,4 +109,3 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 }
-
