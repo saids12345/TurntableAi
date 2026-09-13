@@ -2,12 +2,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
 /**
  * GET  /api/voice-profile
  * Returns the current user's saved brand voice style guide (if any).
  */
 export async function GET(_req: NextRequest) {
+  // 🔒 Pro lock (trial or paid). Prevents bypassing the UI.
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 
@@ -17,10 +21,7 @@ export async function GET(_req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json(
-        { error: "Not signed in" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
     }
 
     const { data, error } = await supabase
@@ -43,10 +44,7 @@ export async function GET(_req: NextRequest) {
     });
   } catch (err) {
     console.error("voice-profile GET unexpected", err);
-    return NextResponse.json(
-      { error: "Server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
 
@@ -56,6 +54,9 @@ export async function GET(_req: NextRequest) {
  * Saves / updates the current user's brand voice style guide.
  */
 export async function POST(req: NextRequest) {
+  // 🔒 Pro lock (trial or paid). Prevents bypassing the UI.
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 
@@ -65,10 +66,7 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json(
-        { error: "Not signed in" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
     }
 
     const body = (await req.json().catch(() => ({}))) as {
@@ -95,18 +93,16 @@ export async function POST(req: NextRequest) {
 
     const now = new Date().toISOString();
 
-    const { error } = await supabase
-      .from("voice_profiles")
-      .upsert(
-        [
-          {
-            user_id: user.id,
-            style_guide: styleGuide,
-            updated_at: now,
-          },
-        ],
-        { onConflict: "user_id" }
-      );
+    const { error } = await supabase.from("voice_profiles").upsert(
+      [
+        {
+          user_id: user.id,
+          style_guide: styleGuide,
+          updated_at: now,
+        },
+      ],
+      { onConflict: "user_id" }
+    );
 
     if (error) {
       console.error("voice-profile POST error", error);
@@ -123,10 +119,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("voice-profile POST unexpected", err);
-    return NextResponse.json(
-      { error: "Server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
 

@@ -6,11 +6,13 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:brain-provenance": "tsx tests/brain/decisionProvenance.test.ts",
+    "test:brain": "npm run test:brain-provenance && tsx tests/brain/selfCritique.test.ts && tsx tests/brain/deliberationGate.test.ts && tsx tests/brain/decisionArbitrator.test.ts && tsx tests/brain/decisionStability.test.ts && tsx tests/brain/decisionAuthority.test.ts && tsx tests/brain/authorityPolicy.test.ts && tsx tests/brain/workflowAuthorityHandoff.test.ts && tsx tests/brain/strategySafety.test.ts && tsx tests/brain/autoActionStatus.test.ts && tsx tests/brain/decisionOutcomeVerifier.test.ts && tsx tests/brain/operatorMemoryTrust.test.ts"
   },
   "dependencies": {
-    "@supabase/auth-helpers-nextjs": "^0.10.0",
-    "@supabase/supabase-js": "^2.79.0",
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.91.1",
     "@vercel/analytics": "^1.5.0",
     "clsx": "^2.1.1",
     "google-auth-library": "^10.3.0",
@@ -22,7 +24,7 @@
     "react-dom": "19.1.0",
     "recharts": "^3.2.1",
     "resend": "^6.4.1",
-    "stripe": "^20.0.0",
+    "stripe": "^20.1.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
     "eslint-config-next": "15.5.2",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.12",
     "typescript": "^5"
   }
 }

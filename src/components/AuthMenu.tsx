@@ -2,82 +2,83 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { usePathname, useRouter } from "next/navigation";
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
 type SessionState = "loading" | "signed-in" | "signed-out";
 
 export default function AuthMenu() {
-  const supabase = createClientComponentClient();
+  const supabase = getSupabaseBrowserClient();
+  const router = useRouter();
   const pathname = usePathname();
+
   const [state, setState] = useState<SessionState>("loading");
-  const [email, setEmail] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      if (data.session) {
-        setState("signed-in");
-        setEmail(data.session.user.email ?? null);
-      } else {
-        setState("signed-out");
-      }
-    });
-    // keep it fresh if user signs in/out somewhere else
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      if (session) {
-        setState("signed-in");
-        setEmail(session.user.email ?? null);
-      } else {
-        setState("signed-out");
-        setEmail(null);
-      }
-    });
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
-  }, [supabase]);
+    let unsub: (() => void) | null = null;
 
-  async function handleSignOut() {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      const u = data?.user ?? null;
+      setUser(u);
+      setState(u ? "signed-in" : "signed-out");
+
+      const { data: sub } = supabase.auth.onAuthStateChange(
+        (_event: AuthChangeEvent, session: Session | null) => {
+          const u2 = session?.user ?? null;
+          setUser(u2);
+          setState(u2 ? "signed-in" : "signed-out");
+
+          // Important for App Router + SSR cookies
+          router.refresh();
+        }
+      );
+
+      unsub = () => sub.subscription.unsubscribe();
+    })();
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [supabase, router]);
+
+  async function signOut() {
     await supabase.auth.signOut();
-    window.location.href = "/login"; // simple redirect after sign out
+    router.refresh();
+    router.push("/");
   }
 
-  // small, unobtrusive UI for your header
+  const loginHref = `/login?redirect=${encodeURIComponent(pathname || "/")}`;
+
   if (state === "loading") {
     return (
-      <div className="h-8 w-24 rounded-lg bg-neutral-800/60 animate-pulse" />
+      <div className="text-sm text-white/70 px-3 py-2 rounded-lg border border-white/10">
+        Loading…
+      </div>
     );
   }
 
   if (state === "signed-out") {
-    // preserve where the user was going: /login?redirect=/settings/voice
-    const redirect = pathname && pathname !== "/login" ? `?redirect=${encodeURIComponent(pathname)}` : "";
     return (
       <Link
-        href={`/login${redirect}`}
-        className="text-sm text-neutral-300 hover:text-white border border-neutral-700 rounded-lg px-3 py-1.5"
+        href={loginHref}
+        className="text-sm text-white/80 hover:text-white px-3 py-2 rounded-lg border border-white/10 hover:border-white/20"
       >
         Sign in
       </Link>
     );
   }
 
-  // signed-in
   return (
     <div className="flex items-center gap-3">
-      {email && (
-        <span className="text-xs text-neutral-400 hidden sm:inline">
-          {email}
-        </span>
-      )}
+      <span className="text-sm text-white/70">
+        {user?.email ?? "Signed in"}
+      </span>
       <button
-        onClick={handleSignOut}
-        className="text-sm text-neutral-300 hover:text-white border border-neutral-700 rounded-lg px-3 py-1.5"
-        aria-label="Sign out"
+        onClick={signOut}
+        className="text-sm text-white/80 hover:text-white px-3 py-2 rounded-lg border border-white/10 hover:border-white/20"
       >
         Sign out
       </button>

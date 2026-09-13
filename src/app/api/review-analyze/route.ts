@@ -2,10 +2,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { requireProForApi } from "@/lib/requirePro";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // Reuse the same normalization pattern as review-reply
 function extractText(resp: any): string {
@@ -22,15 +22,22 @@ function extractText(resp: any): string {
 }
 
 export async function POST(req: NextRequest) {
+  // 🔒 Pro lock (trial or paid). Prevents bypassing the UI.
+  await requireProForApi();
+
   const body = await req.json().catch(() => ({} as any));
   const reviewText = String(body?.reviewText ?? "").trim();
 
   if (!reviewText) {
-    return NextResponse.json(
-      { error: "Missing reviewText" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Missing reviewText" }, { status: 400 });
   }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
+  }
+
+  const openai = new OpenAI({ apiKey });
 
   const prompt = `
 You are analyzing a customer review for a local restaurant.
@@ -60,6 +67,7 @@ ${reviewText}
     });
 
     const raw = extractText(ai);
+
     let parsed: any = {};
     try {
       parsed = JSON.parse(raw);
@@ -72,6 +80,7 @@ ${reviewText}
       typeof ratingRaw === "number" || typeof ratingRaw === "string"
         ? Number(ratingRaw)
         : NaN;
+
     const detectedRating =
       Number.isFinite(ratingNum) && ratingNum >= 1 && ratingNum <= 5
         ? Math.round(ratingNum)
@@ -81,7 +90,7 @@ ${reviewText}
     const allowedLengths = ["short", "medium", "long"] as const;
     const lengthSuggestion = allowedLengths.includes(lengthSuggestionRaw)
       ? (lengthSuggestionRaw as (typeof allowedLengths)[number])
-      : null;
+      : "medium"; // sensible default
 
     const toneLabel =
       typeof parsed?.toneLabel === "string" && parsed.toneLabel.trim()
@@ -89,15 +98,13 @@ ${reviewText}
         : null;
 
     const sentimentSummary =
-      typeof parsed?.sentimentSummary === "string" &&
-      parsed.sentimentSummary.trim()
+      typeof parsed?.sentimentSummary === "string" && parsed.sentimentSummary.trim()
         ? parsed.sentimentSummary.trim()
         : null;
 
-    const issues =
-      Array.isArray(parsed?.issues)
-        ? parsed.issues.filter((x: any) => typeof x === "string" && x.trim())
-        : [];
+    const issues = Array.isArray(parsed?.issues)
+      ? parsed.issues.filter((x: any) => typeof x === "string" && x.trim())
+      : [];
 
     const languageName =
       typeof parsed?.languageName === "string" && parsed.languageName.trim()
@@ -114,9 +121,6 @@ ${reviewText}
     });
   } catch (err: any) {
     console.error("review-analyze error", err);
-    return NextResponse.json(
-      { error: "Failed to analyze review" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to analyze review" }, { status: 500 });
   }
 }

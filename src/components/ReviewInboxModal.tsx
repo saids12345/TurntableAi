@@ -52,7 +52,7 @@ export default function ReviewInboxModal({
             <h2 className="text-sm font-semibold">Insert from inbox</h2>
             <p className="text-xs text-white/60">
               Pick a recent Google/Yelp review you&apos;ve imported, then drop it
-              into the reply tool.
+              into the reply feature.
             </p>
           </div>
           <button

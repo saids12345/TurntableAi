@@ -1,6 +1,8 @@
 // src/app/api/gmail/yelp/start/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { hasProAccess } from "@/lib/plans";
+
 
 // Pull env vars once at module level
 const GMAIL_YELP_CLIENT_ID = process.env.GMAIL_YELP_CLIENT_ID;
@@ -49,6 +51,7 @@ function gmailOAuthUrl(state: string): string {
 /**
  * Starts Gmail OAuth for Yelp alerts.
  * - Requires a signed-in user (Supabase)
+ * - Requires Pro (trial or paid) to prevent free users from connecting
  * - Encodes the user id into `state` so we know who to attach tokens to
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -64,6 +67,31 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       return NextResponse.redirect(
         new URL(`/login?redirect=${encodedRedirect}`, req.url)
+      );
+    }
+
+    // 🔒 Pro lock. Redirect instead of returning JSON.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_pro, plan, stripe_subscription_status")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
+    const isPro = hasProAccess({
+      isPro: profile?.is_pro,
+      plan: profile?.plan,
+      stripeSubscriptionStatus: profile?.stripe_subscription_status,
+    });
+
+    if (!isPro) {
+      const current = new URL(req.url);
+      const redirectPath = `${current.pathname}${current.search}`;
+
+      return NextResponse.redirect(
+        new URL(
+          `/upgrade?redirect=${encodeURIComponent(redirectPath)}`,
+          current.origin,
+        ),
       );
     }
 
@@ -83,4 +111,3 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 }
-

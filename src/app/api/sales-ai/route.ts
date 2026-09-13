@@ -1,5 +1,7 @@
+// src/app/api/sales-ai/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
 
@@ -32,9 +34,18 @@ type Body = {
 };
 
 function parsePOS(text?: string) {
-  if (!text) return { rows: [] as any[], totals: { sales: 0, orders: 0, refunds: 0, cogs: 0, labor: 0, traffic: 0 } };
+  if (!text)
+    return {
+      rows: [] as any[],
+      totals: { sales: 0, orders: 0, refunds: 0, cogs: 0, labor: 0, traffic: 0 },
+    };
+
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
-  if (!lines.length) return { rows: [], totals: { sales: 0, orders: 0, refunds: 0, cogs: 0, labor: 0, traffic: 0 } };
+  if (!lines.length)
+    return {
+      rows: [],
+      totals: { sales: 0, orders: 0, refunds: 0, cogs: 0, labor: 0, traffic: 0 },
+    };
 
   const first = lines[0];
   const hasHeader = /date/i.test(first) && /(sales|revenue|gross|net)/i.test(first);
@@ -54,7 +65,9 @@ function parsePOS(text?: string) {
 
   const rows = rowsRaw.map((line) => {
     const parts = line.split(",").map((s) => s.trim());
-    const num = (i: number) => (i >= 0 && i < parts.length ? Number(String(parts[i]).replace(/[,$]/g, "")) : NaN);
+    const num = (i: number) =>
+      i >= 0 && i < parts.length ? Number(String(parts[i]).replace(/[,$]/g, "")) : NaN;
+
     return {
       date: iDate >= 0 ? parts[iDate] : parts[0] ?? "",
       sales: Number.isFinite(num(iSales)) ? num(iSales) : NaN,
@@ -88,10 +101,6 @@ function usd(n: number | null | undefined) {
     : "—";
 }
 
-function round2(n: number) {
-  return Math.round(n * 100) / 100;
-}
-
 function movingAverage(arr: number[], win = 3) {
   if (!arr.length) return [];
   const out: number[] = [];
@@ -103,11 +112,17 @@ function movingAverage(arr: number[], win = 3) {
 }
 
 export async function POST(req: Request) {
+  // 🔒 PRO GATE (prevents bypassing the UI)
+  await requireProForApi();
+
   try {
     const body = (await req.json()) as Body;
 
     if (!body?.startDate || !body?.endDate || !body?.inputs) {
-      return NextResponse.json({ error: "Missing required fields (startDate, endDate, inputs)" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required fields (startDate, endDate, inputs)" },
+        { status: 400 }
+      );
     }
 
     // 1) Derive numbers from inputs + optional POS paste
@@ -119,7 +134,7 @@ export async function POST(req: Request) {
     const labor = (body.inputs.labor ?? null) || (pos.totals.labor || null);
 
     const avgTicket = orders && orders > 0 && totalSales ? totalSales / orders : null;
-    const grossMarginPct = totalSales && cogs != null ? (1 - (cogs / totalSales)) * 100 : null;
+    const grossMarginPct = totalSales && cogs != null ? (1 - cogs / totalSales) * 100 : null;
     const laborPct = totalSales && labor != null ? (labor / totalSales) * 100 : null;
 
     // 2) Build a basic 7-day forecast from daily sales if POS exists; else from totals
@@ -135,7 +150,8 @@ export async function POST(req: Request) {
     }
 
     const histMA = movingAverage(dailySales, 3);
-    const last = histMA.length ? histMA[histMA.length - 1] : (totalSales ? totalSales / 7 : 0);
+    const last = histMA.length ? histMA[histMA.length - 1] : totalSales ? totalSales / 7 : 0;
+
     // Simple seasonality bump using last 3 deltas
     const deltas = dailySales.slice(-3).map((v, i, a) => (i ? v - a[i - 1] : 0));
     const avgDelta = deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0;
@@ -208,6 +224,7 @@ Return plain text (no JSON).`;
         .filter((l) => /^\s*[-*•]\s+/.test(l))
         .map((l) => l.replace(/^\s*[-*•]\s+/, "").trim())
         .slice(0, 5);
+
       aiActions = bullets.length
         ? bullets
         : [
@@ -216,8 +233,7 @@ Return plain text (no JSON).`;
             "Align staffing to peak hours to keep labor% ≤ target.",
           ];
     } else {
-      aiSummary =
-        "AI disabled (no OPENAI_API_KEY). Showing baseline KPIs and a naive 7-day forecast.";
+      aiSummary = "AI disabled (no OPENAI_API_KEY). Showing baseline KPIs and a naive 7-day forecast.";
       aiActions = [
         "Add your OPENAI_API_KEY to enable AI summaries.",
         "Paste POS rows for a better forecast baseline.",
@@ -243,6 +259,9 @@ Return plain text (no JSON).`;
     return NextResponse.json(result, { status: 200 });
   } catch (err: any) {
     console.error("sales-ai error:", err);
-    return NextResponse.json({ error: err?.message || "Failed to analyze sales." }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || "Failed to analyze sales." },
+      { status: 500 }
+    );
   }
 }

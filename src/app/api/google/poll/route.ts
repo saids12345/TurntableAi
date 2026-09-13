@@ -1,15 +1,13 @@
 // src/app/api/google/poll/route.ts
 import { NextResponse } from "next/server";
-import {
-  getAllGoogleConns,
-  setLastSeen,
-  upsertReviews,
-} from "@/lib/store";
+import { getAllGoogleConns, setLastSeen, upsertReviews } from "@/lib/store";
 import { listReviews, refreshToken, starToNumber } from "@/lib/google";
 import { sendReviewEmail } from "@/lib/email";
 
-// make sure this route isn't cached
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const CRON_SECRET = process.env.CRON_SECRET;
 
 // Helper to get base URL for calling our own API routes
 function getBaseUrl(): string {
@@ -20,23 +18,19 @@ function getBaseUrl(): string {
   );
 }
 
-/**
- * Multi-tenant Google review poller.
- *
- * - Finds ALL users who have a Google Business connection.
- * - For each user + each location:
- *    - fetches new reviews since lastSeen
- *    - generates an AI draft reply
- *    - emails that user
- *    - upserts reviews into public.reviews
- *
- * This is what your cron job hits via /api/cron/gmail-yelp → /api/google/poll
- */
-export async function POST() {
+export async function POST(req: Request) {
+  // ✅ Secret-lock (cron/system job) — not Pro-lock
+  const incoming = req.headers.get("x-cron-secret");
+  if (!CRON_SECRET || incoming !== CRON_SECRET) {
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   const baseUrl = getBaseUrl();
 
-  // 1) Load all Google connections (one per user)
-  const conns = await getAllGoogleConns(); // GoogleConn[]
+  const conns = await getAllGoogleConns();
   if (!conns.length) {
     return NextResponse.json({
       ok: true,
@@ -49,20 +43,17 @@ export async function POST() {
   let totalSent = 0;
   let totalSaved = 0;
 
-  // 2) Process each user independently
   for (const conn of conns) {
     const userId = conn.userId;
     const newLastSeen: Record<string, string> = {};
     let sent = 0;
     let saved = 0;
 
-    // Safety: if a connection is missing basics, skip it
     if (!conn?.tokens?.access_token || !Array.isArray(conn.locations)) {
       console.warn("Skipping Google conn with missing data", { userId });
       continue;
     }
 
-    // Refresh access token if we have a refresh_token
     if (conn.tokens.refresh_token) {
       try {
         const r = await refreshToken(conn.tokens.refresh_token);
@@ -77,20 +68,16 @@ export async function POST() {
         const res = await listReviews(conn.tokens.access_token, loc.name);
         const last = conn.lastSeenByLocation?.[loc.name];
 
-        // Only the new ones since last time
         const fresh = (res.reviews || []).filter(
           (r) => r.updateTime && (!last || r.updateTime > last)
         );
 
-        // newest → oldest for nicer email ordering
         fresh.sort((a, b) => (a.updateTime! < b.updateTime! ? 1 : -1));
 
-        // === 1) Email alerts (+ AI auto-drafts) ===
         for (const r of fresh) {
           const rating = starToNumber(r.starRating) ?? null;
           const reviewText = r.comment || "";
 
-          // --- call your AI reply generator ---
           let aiReply: string | null = null;
           try {
             const aiRes = await fetch(`${baseUrl}/api/review-reply`, {
@@ -109,24 +96,19 @@ export async function POST() {
                 policy_offer_remedy_if_low: true,
                 language: "English",
               }),
+              cache: "no-store",
             });
 
             const aiData: any = await aiRes.json().catch(() => ({}));
-
-            if (
-              aiRes.ok &&
-              typeof aiData?.reply === "string" &&
-              aiData.reply.trim()
-            ) {
+            if (aiRes.ok && typeof aiData?.reply === "string" && aiData.reply.trim()) {
               aiReply = aiData.reply.trim();
             }
           } catch (err) {
             console.error("AI reply generation failed:", err);
           }
 
-          // Send email to THIS owner only
           await sendReviewEmail({
-            to: conn.email, // per-user email from connection
+            to: conn.email,
             platform: "Google",
             locationName: loc.title,
             rating: rating ?? undefined,
@@ -137,11 +119,9 @@ export async function POST() {
           });
 
           sent++;
-          // gentle throttle to play nice with email provider / Google
           await new Promise((res) => setTimeout(res, 200));
         }
 
-        // === 2) Persist to DB ===
         if (fresh.length) {
           const payload = fresh.map((r) => ({
             userId,
@@ -153,14 +133,13 @@ export async function POST() {
             author: r.reviewer?.displayName ?? null,
             createTime: r.createTime ?? null,
             updateTime: r.updateTime ?? null,
-            raw: r, // keep full provider payload for debugging
+            raw: r,
           }));
 
           const result = await upsertReviews(payload);
           saved += result.upserted;
         }
 
-        // advance the high-water mark for this location
         const newestUpdate =
           res.reviews?.[0]?.updateTime || last || new Date().toISOString();
         newLastSeen[loc.name] = newestUpdate;
@@ -169,7 +148,6 @@ export async function POST() {
       }
     }
 
-    // Persist lastSeen for this user
     if (Object.keys(newLastSeen).length) {
       await setLastSeen(userId, newLastSeen);
     }
@@ -185,5 +163,5 @@ export async function POST() {
   });
 }
 
-// Allow GET for manual tests
+// Allow GET for manual tests (still secret-locked)
 export const GET = POST;
