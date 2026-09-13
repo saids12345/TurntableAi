@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import { hasProAccess } from "@/lib/plans";
 
 const publicLinks = [{ href: "/", label: "Home" }];
 
@@ -17,9 +18,6 @@ const appLinks = [
   { href: "/settings", label: "Settings" },
 ];
 
-function isAllowedStripeStatus(status?: string | null) {
-  return status === "trialing" || status === "active" || status === "past_due";
-}
 
 export default function Nav() {
   const pathname = usePathname();
@@ -60,10 +58,11 @@ export default function Nav() {
 
       if (!alive) return;
 
-      const pro =
-        profile?.is_pro === true ||
-        profile?.plan === "pro" ||
-        isAllowedStripeStatus(profile?.stripe_subscription_status ?? null);
+      const pro = hasProAccess({
+        isPro: profile?.is_pro,
+        plan: profile?.plan,
+        stripeSubscriptionStatus: profile?.stripe_subscription_status,
+      });
 
       setIsPro(!!pro);
       setLoadingProfile(false);

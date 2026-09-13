@@ -1,6 +1,7 @@
 // src/middleware.ts
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { hasProAccess } from "@/lib/plans";
 
 const PUBLIC_PATHS = [
   "/", // homepage
@@ -51,10 +52,6 @@ function buildBillingRedirectUrl(req: NextRequest) {
   return url;
 }
 
-function isAllowedProStatus(status?: string | null) {
-  // treat these Stripe statuses as "unlocked"
-  return status === "trialing" || status === "active" || status === "past_due";
-}
 
 export async function middleware(request: NextRequest) {
   // Don't run middleware on Stripe webhook (signature/raw body safety)
@@ -133,8 +130,11 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(buildBillingRedirectUrl(request));
     }
 
-    const unlocked =
-      profile.is_pro === true || isAllowedProStatus(profile.stripe_subscription_status);
+    const unlocked = hasProAccess({
+      isPro: profile.is_pro,
+      plan: profile.plan,
+      stripeSubscriptionStatus: profile.stripe_subscription_status,
+    });
 
     if (!unlocked) {
       return NextResponse.redirect(buildBillingRedirectUrl(request));

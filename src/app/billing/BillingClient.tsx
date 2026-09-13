@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { isAllowedStripeStatus } from "@/lib/plans";
 
 type Props = {
   authed: boolean;
@@ -24,10 +25,6 @@ function formatDateMaybe(iso?: string | null) {
   });
 }
 
-// ✅ LOCK on past_due
-function isAllowedStripeStatus(status?: string | null) {
-  return status === "trialing" || status === "active";
-}
 
 export default function BillingClient({
   authed,

@@ -1,5 +1,6 @@
 // src/lib/requirePro.ts
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
+import { hasProAccess } from "@/lib/plans";
 
 /**
  * Returns { ok: true } if user is Pro, otherwise { ok:false, redirect }.
@@ -23,11 +24,15 @@ export async function requirePro(opts?: { billingPath?: string }) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("is_pro, plan")
+    .select("is_pro, plan, stripe_subscription_status")
     .eq("id", user.id)
     .maybeSingle();
 
-  const isPro = !!profile?.is_pro || profile?.plan === "pro";
+  const isPro = hasProAccess({
+    isPro: profile?.is_pro,
+    plan: profile?.plan,
+    stripeSubscriptionStatus: profile?.stripe_subscription_status,
+  });
   if (!isPro) {
     return {
       ok: false as const,
@@ -58,11 +63,15 @@ export async function requireProForApi() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("is_pro, plan")
+    .select("is_pro, plan, stripe_subscription_status")
     .eq("id", user.id)
     .maybeSingle();
 
-  const isPro = !!profile?.is_pro || profile?.plan === "pro";
+  const isPro = hasProAccess({
+    isPro: profile?.is_pro,
+    plan: profile?.plan,
+    stripeSubscriptionStatus: profile?.stripe_subscription_status,
+  });
   if (!isPro) {
     throw new Response(JSON.stringify({ error: "Pro required" }), {
       status: 402,

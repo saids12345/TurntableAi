@@ -1,6 +1,7 @@
 // src/app/api/gmail/yelp/start/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { hasProAccess } from "@/lib/plans";
 
 
 // Pull env vars once at module level
@@ -70,28 +71,29 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     // 🔒 Pro lock. Redirect instead of returning JSON.
-const { data: profile } = await supabase
-  .from("profiles")
-  .select("is_pro, plan")
-  .eq("id", data.user.id)
-  .maybeSingle();
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_pro, plan, stripe_subscription_status")
+      .eq("id", data.user.id)
+      .maybeSingle();
 
-const isPro =
-  !!profile?.is_pro ||
-  profile?.plan === "pro";
+    const isPro = hasProAccess({
+      isPro: profile?.is_pro,
+      plan: profile?.plan,
+      stripeSubscriptionStatus: profile?.stripe_subscription_status,
+    });
 
-if (!isPro) {
-  const current = new URL(req.url);
-  const redirectPath =
-    `${current.pathname}${current.search}`;
+    if (!isPro) {
+      const current = new URL(req.url);
+      const redirectPath = `${current.pathname}${current.search}`;
 
-  return NextResponse.redirect(
-    new URL(
-      `/upgrade?redirect=${encodeURIComponent(redirectPath)}`,
-      current.origin,
-    ),
-  );
-}
+      return NextResponse.redirect(
+        new URL(
+          `/upgrade?redirect=${encodeURIComponent(redirectPath)}`,
+          current.origin,
+        ),
+      );
+    }
 
     const userId = data.user.id;
 

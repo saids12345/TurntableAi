@@ -1,13 +1,10 @@
 // src/app/billing/page.tsx
 import BillingClient from "./BillingClient";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
+import { hasProAccess } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
-// ✅ LOCK on past_due
-function isAllowedStripeStatus(status?: string | null) {
-  return status === "trialing" || status === "active";
-}
 
 export default async function BillingPage({
   searchParams,
@@ -48,10 +45,11 @@ export default async function BillingPage({
   const stripeStatus =
     (profile?.stripe_subscription_status as string | null) ?? null;
 
-  const isPro =
-    profile?.is_pro === true ||
-    profile?.plan === "pro" ||
-    isAllowedStripeStatus(stripeStatus);
+  const isPro = hasProAccess({
+    isPro: profile?.is_pro,
+    plan: profile?.plan,
+    stripeSubscriptionStatus: stripeStatus,
+  });
 
   return (
     <BillingClient

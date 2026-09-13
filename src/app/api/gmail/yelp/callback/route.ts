@@ -1,6 +1,7 @@
 // src/app/api/gmail/yelp/callback/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { hasProAccess } from "@/lib/plans";
 
 
 // Read envs once (but don't crash at import-time)
@@ -62,29 +63,29 @@ export async function GET(req: NextRequest) {
     const userId = data.user.id;
 
     // 🔒 Pro lock. Redirect instead of JSON.
-const { data: profile } = await supabase
-  .from("profiles")
-  .select("is_pro, plan")
-  .eq("id", userId)
-  .maybeSingle();
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_pro, plan, stripe_subscription_status")
+      .eq("id", userId)
+      .maybeSingle();
 
-const isPro =
-  !!profile?.is_pro ||
-  profile?.plan === "pro";
+    const isPro = hasProAccess({
+      isPro: profile?.is_pro,
+      plan: profile?.plan,
+      stripeSubscriptionStatus: profile?.stripe_subscription_status,
+    });
 
-if (!isPro) {
-  const current = new URL(req.url);
+    if (!isPro) {
+      const current = new URL(req.url);
+      const redirectPath = `${current.pathname}${current.search}`;
 
-  const redirectPath =
-    `${current.pathname}${current.search}`;
-
-  return NextResponse.redirect(
-    new URL(
-      `/upgrade?redirect=${encodeURIComponent(redirectPath)}`,
-      current.origin,
-    ),
-  );
-}
+      return NextResponse.redirect(
+        new URL(
+          `/upgrade?redirect=${encodeURIComponent(redirectPath)}`,
+          current.origin,
+        ),
+      );
+    }
 
     // 2.5) Validate OAuth state (CSRF protection)
     // We encoded { u: userId } in /start. Verify it matches.
