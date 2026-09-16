@@ -58,6 +58,49 @@ import {
   evaluateDecisionAuthority,
 } from "./decisionAuthority";
 
+type RankedStrategyWithId = {
+  strategy: {
+    id: string;
+  };
+};
+
+export function resolveReasoningSelections<
+  T extends RankedStrategyWithId,
+>(params: {
+  rankedStrategies: T[];
+  productionWinnerStrategyId:
+    string | null | undefined;
+  shadowSelectedStrategyId:
+    string | null | undefined;
+  fallbackStrategyId: string;
+}) {
+  const productionSelectedStrategyId =
+    params.productionWinnerStrategyId ??
+    params.fallbackStrategyId;
+
+  const selected =
+    params.rankedStrategies.find(
+      ({ strategy }) =>
+        strategy.id ===
+        productionSelectedStrategyId,
+    );
+
+  const shadowSelected =
+    params.shadowSelectedStrategyId
+      ? params.rankedStrategies.find(
+          ({ strategy }) =>
+            strategy.id ===
+            params.shadowSelectedStrategyId,
+        )
+      : undefined;
+
+  return {
+    productionSelectedStrategyId,
+    selected,
+    shadowSelected,
+  };
+}
+
 export function runReasoningPipeline(
   context: BrainContext,
 ) {
@@ -197,16 +240,23 @@ export function runReasoningPipeline(
 
       
 
+
   //
-  // 10. Select the strategy associated
-  //     with the strongest future.
+  // 10. Preserve the production-safe selection
+  //     while exposing the shadow selection separately.
   //
-  const selected =
-    rankedStrategies.find(
-      ({ strategy }) =>
-        strategy.id ===
-        comparison.best.strategyId,
-    );
+  const {
+    selected,
+    shadowSelected,
+  } = resolveReasoningSelections({
+    rankedStrategies,
+    productionWinnerStrategyId:
+      decisionAuthority.productionWinnerStrategyId,
+    shadowSelectedStrategyId:
+      decisionAuthority.shadowSelectedStrategyId,
+    fallbackStrategyId:
+      comparison.best.strategyId,
+  });
 
   return {
     objective,
@@ -235,9 +285,10 @@ export function runReasoningPipeline(
 
     decisionStability,
 
-          decisionAuthority,
-              
+    decisionAuthority,
 
     selected,
+
+    shadowSelected,
   };
 }

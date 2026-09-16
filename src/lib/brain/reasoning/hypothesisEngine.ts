@@ -2,7 +2,9 @@ import type {
   BrainContext,
 } from "@/lib/brain/brainContext";
 import {
+  getMemoryVerificationConfidenceScore,
   inferMemoryOutcomeSignal,
+  isMemoryTrustedForReasoning,
 } from "@/lib/operatorMemoryTrust";
 
 export type EvidenceSource =
@@ -2154,6 +2156,9 @@ function extractEvidence(
         ({ memory }) =>
           !isEvidenceGapMemory(
             memory,
+          ) &&
+          isMemoryTrustedForReasoning(
+            memory,
           ),
       )
       .slice(
@@ -2190,10 +2195,15 @@ function extractEvidence(
           memory.created_at,
       );
 
+      const verificationConfidence =
+      getMemoryVerificationConfidenceScore(
+        memory,
+      );
+
     const confidence =
-  normalizeMemoryConfidence(
-    memory.confidence,
-  );
+      clamp(
+        verificationConfidence / 100,
+      );
 
 /*
  * The measured outcome determines how the historical
