@@ -4058,13 +4058,19 @@ const {
       runAIKernel({
         ...kernelInput,
         memoryMode:
-          "normal",
+  "normal",
+
+beliefPersistenceMode:
+  "disabled",
       }),
   
       runAIKernel({
         ...kernelInput,
         memoryMode:
-          "excluded",
+  "excluded",
+
+beliefPersistenceMode:
+  "disabled",
       }),
     ]);
   
