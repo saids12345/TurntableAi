@@ -39,6 +39,11 @@ import {
 } from "@/lib/brain/brainInitializer";
 
 import {
+  loadBeliefState,
+  saveBeliefState,
+} from "@/lib/brain/beliefStateStore";
+
+import {
   completeBrainRun,
   runBrain,
 } from "@/lib/brain/brainRuntime";
@@ -76,6 +81,26 @@ export type AIKernelInput = {
    * is handled as "normal".
    */
   memoryMode?: "normal" | "excluded";
+
+  /**
+   * Controls durable Brain belief-state persistence.
+   *
+   * "normal":
+   *   Load prior beliefs before reasoning and persist the
+   *   revised belief system after a successfully completed run.
+   *
+   * "disabled":
+   *   Do not read or write persisted belief state.
+   *   Used by diagnostic/counterfactual runs so evaluations
+   *   remain side-effect free.
+   *
+   * Existing production callers remain unchanged because
+   * undefined is treated as "normal".
+   */
+  beliefPersistenceMode?:
+    | "normal"
+    | "disabled";
+
   forceProvenanceFailure?: boolean;
 };
 
@@ -584,6 +609,64 @@ export async function runAIKernel(
     input,
   );
 
+  const beliefPersistenceEnabled =
+  input.beliefPersistenceMode !==
+  "disabled";
+
+const beliefLocationName =
+  mode === "single_location"
+    ? restaurantStates[0]
+        ?.locationName ?? null
+    : null;
+
+/*
+ * Restore the latest cognitive belief snapshot before
+ * this Brain run begins reasoning.
+ *
+ * This is intentionally separate from Operator Memory:
+ *
+ * Operator Memory
+ *   = verified real-world action/outcome learning
+ *
+ * Brain Belief State
+ *   = the previous cognitive belief system used as
+ *     prior reasoning state for revision.
+ *
+ * Persistence is best-effort. A missing table, temporary
+ * database failure, or invalid stored snapshot must never
+ * prevent the Brain itself from operating.
+ */
+if (
+  beliefPersistenceEnabled
+) {
+  try {
+    const persistedBeliefState =
+      await loadBeliefState({
+        userId:
+          input.userId,
+
+        mode,
+
+        locationName:
+          beliefLocationName,
+      });
+
+    if (
+      persistedBeliefState
+    ) {
+      brainContext.reasoning
+        .beliefs =
+        persistedBeliefState
+          .beliefSystem;
+    }
+  } catch (error) {
+    console.warn(
+      "AI Kernel belief state load failed:",
+      error,
+    );
+  }
+}
+
   const planningContexts =
     buildPlanningContexts(
       restaurantStates,
@@ -943,6 +1026,52 @@ brainContext.knowledge
   completeBrainRun(
     cognitiveContext,
   );
+
+  /*
+ * Persist the completed Brain's revised cognitive beliefs
+ * for use as prior state during the next independent run.
+ *
+ * Do not replace an existing persisted belief system with
+ * an empty one. A temporary evidence gap should not erase
+ * the Brain's prior cognitive state.
+ *
+ * As with loading, persistence is best-effort and must not
+ * make an otherwise successful Brain run fail.
+ */
+const revisedBeliefSystem =
+  cognitiveContext.reasoning
+    .beliefs;
+
+if (
+  beliefPersistenceEnabled &&
+  revisedBeliefSystem &&
+  revisedBeliefSystem
+    .beliefs.length > 0
+) {
+  try {
+    await saveBeliefState({
+      userId:
+        input.userId,
+
+      mode,
+
+      locationName:
+        beliefLocationName,
+
+      sourceRunId:
+        cognitiveContext.metadata
+          .runId,
+
+      beliefSystem:
+        revisedBeliefSystem,
+    });
+  } catch (error) {
+    console.warn(
+      "AI Kernel belief state save failed:",
+      error,
+    );
+  }
+}
 
   const cognition =
   buildCognitionSnapshot(
