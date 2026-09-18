@@ -50,6 +50,16 @@ export interface Belief {
 
   confidenceDelta?: number;
 
+  /**
+   * Number of times an existing belief has been
+   * reconsidered by a later Brain run.
+   */
+  reconsiderationCount?: number;
+
+  /**
+   * Number of times the belief has materially changed,
+   * rather than merely being reconsidered.
+   */
   revisionCount?: number;
 
   assumptions?: string[];
@@ -166,6 +176,44 @@ function uniqueStrings(
       values ?? [],
     ),
   );
+}
+
+function haveSameStringSet(
+  left:
+    | string[]
+    | undefined,
+  right:
+    | string[]
+    | undefined,
+) {
+  const leftSet =
+    new Set(
+      left ?? [],
+    );
+
+  const rightSet =
+    new Set(
+      right ?? [],
+    );
+
+  if (
+    leftSet.size !==
+    rightSet.size
+  ) {
+    return false;
+  }
+
+  for (
+    const value of leftSet
+  ) {
+    if (
+      !rightSet.has(value)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function getEvidenceMap(
@@ -516,6 +564,55 @@ function buildBelief(
         .contradictingEvidence,
     );
 
+  const currentStatus =
+    determineStatus(
+      revisedConfidence,
+      assessment
+        .contradictionRatio,
+    );
+
+  const confidenceChangedMaterially =
+    previousConfidence !==
+      undefined &&
+    Math.abs(
+      confidenceDelta ?? 0,
+    ) >= 0.02;
+
+  const supportingEvidenceChanged =
+    previousBelief
+      ? !haveSameStringSet(
+          previousBelief
+            .supportingEvidence ??
+            previousBelief
+              .evidence,
+          supportingEvidence,
+        )
+      : false;
+
+  const contradictingEvidenceChanged =
+    previousBelief
+      ? !haveSameStringSet(
+          previousBelief
+            .contradictingEvidence,
+          contradictingEvidence,
+        )
+      : false;
+
+  const statusChanged =
+    previousBelief?.status !==
+      undefined &&
+    previousBelief.status !==
+      currentStatus;
+
+  const materiallyRevised =
+    Boolean(previousBelief) &&
+    (
+      confidenceChangedMaterially ||
+      supportingEvidenceChanged ||
+      contradictingEvidenceChanged ||
+      statusChanged
+    );
+
   return {
     id:
       `belief-${hypothesis.id}`,
@@ -555,22 +652,37 @@ function buildBelief(
         .contradictionRatio,
 
     status:
-      determineStatus(
-        revisedConfidence,
-        assessment
-          .contradictionRatio,
-      ),
+      currentStatus,
 
     previousConfidence,
 
     confidenceDelta,
 
+    reconsiderationCount:
+      previousBelief
+        ? (
+            previousBelief
+              .reconsiderationCount ??
+            previousBelief
+              .revisionCount ??
+            0
+          ) + 1
+        : 0,
+
     revisionCount:
       (
         previousBelief
-          ?.revisionCount ??
-        0
-      ) + 1,
+          ?.reconsiderationCount !==
+        undefined
+          ? previousBelief
+              .revisionCount ?? 0
+          : 0
+      ) +
+      (
+        materiallyRevised
+          ? 1
+          : 0
+      ),
 
     assumptions:
       uniqueStrings(
