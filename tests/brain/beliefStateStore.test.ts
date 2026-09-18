@@ -137,6 +137,48 @@ assert.equal(
   false,
 );
 
+const malformedReconsiderationCount = {
+  ...validBeliefSystem,
+
+  beliefs: [
+    {
+      ...validBeliefSystem
+        .beliefs[0],
+
+      reconsiderationCount:
+        "two",
+    },
+  ],
+};
+
+assert.equal(
+  isBeliefSystem(
+    malformedReconsiderationCount,
+  ),
+  false,
+);
+
+const malformedRevisionCount = {
+  ...validBeliefSystem,
+
+  beliefs: [
+    {
+      ...validBeliefSystem
+        .beliefs[0],
+
+      revisionCount:
+        -1,
+    },
+  ],
+};
+
+assert.equal(
+  isBeliefSystem(
+    malformedRevisionCount,
+  ),
+  false,
+);
+
 const missingBeliefs = {
   overallConfidence: 0.8,
 };

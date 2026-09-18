@@ -194,6 +194,37 @@ function isBelief(
     return false;
   }
 
+    if (
+      value.reconsiderationCount !==
+        undefined &&
+      (
+        typeof value.reconsiderationCount !==
+          "number" ||
+        !Number.isInteger(
+          value.reconsiderationCount,
+        ) ||
+        value.reconsiderationCount <
+          0
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      value.revisionCount !==
+        undefined &&
+      (
+        typeof value.revisionCount !==
+          "number" ||
+        !Number.isInteger(
+          value.revisionCount,
+        ) ||
+        value.revisionCount < 0
+      )
+    ) {
+      return false;
+    }
+
   if (
     typeof value.updatedAt !==
     "string"
