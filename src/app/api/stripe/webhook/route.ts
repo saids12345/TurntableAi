@@ -30,37 +30,68 @@ function getCustomerIdFromObj(obj: any): string | null {
 }
 
 /**
- * Optional webhook idempotency.
- * If you create a table stripe_webhook_events(event_id text primary key),
- * this will dedupe retries safely.
+ * Stripe may deliver the same webhook more than once.
  *
- * If the table does NOT exist, this silently continues.
+ * An event is considered processed only AFTER its business
+ * logic has completed successfully.
+ *
+ * This is important: if Supabase or Stripe temporarily fails,
+ * the event remains unprocessed so Stripe can safely retry it.
  */
-async function markEventProcessed(
+async function isEventProcessed(
   eventId: string
-): Promise<"ok" | "duplicate" | "skipped"> {
-  const supabaseAdmin = getSupabaseAdmin();
+): Promise<boolean> {
+  const supabaseAdmin =
+    getSupabaseAdmin();
 
-  try {
-    const { error } = await supabaseAdmin
+  const { data, error } =
+    await supabaseAdmin
       .from("stripe_webhook_events")
-      .insert({ event_id: eventId, processed_at: new Date().toISOString() });
+      .select("event_id")
+      .eq("event_id", eventId)
+      .maybeSingle();
 
-    if (!error) return "ok";
-
-    const msg = (error as any)?.message ?? "";
-    if (
-      msg.toLowerCase().includes("duplicate") ||
-      msg.toLowerCase().includes("unique")
-    ) {
-      return "duplicate";
-    }
-
-    console.warn("[stripe-webhook] markEventProcessed insert error:", error);
-    return "skipped";
-  } catch {
-    return "skipped";
+  if (error) {
+    throw new Error(
+      `Stripe webhook dedupe lookup failed: ${error.message}`
+    );
   }
+
+  return Boolean(data?.event_id);
+}
+
+async function markEventProcessed(
+  event: Stripe.Event
+): Promise<void> {
+  const supabaseAdmin =
+    getSupabaseAdmin();
+
+  const { error } =
+    await supabaseAdmin
+      .from("stripe_webhook_events")
+      .insert({
+        event_id: event.id,
+        event_type: event.type,
+        processed_at:
+          new Date().toISOString(),
+      });
+
+  if (!error) {
+    return;
+  }
+
+  // A concurrent delivery may have completed first.
+  // PostgreSQL 23505 = unique violation.
+  if (
+    (error as any)?.code ===
+    "23505"
+  ) {
+    return;
+  }
+
+  throw new Error(
+    `Stripe webhook completion write failed: ${error.message}`
+  );
 }
 
 /**
@@ -179,10 +210,26 @@ export async function POST(req: Request) {
   try {
     console.log("[stripe-webhook] event:", event.type, "id:", event.id);
 
-    const dedupe = await markEventProcessed(event.id);
-    if (dedupe === "duplicate") {
-      console.log("[stripe-webhook] duplicate event ignored:", event.id);
-      return NextResponse.json({ ok: true, deduped: true }, { status: 200 });
+    const alreadyProcessed =
+      await isEventProcessed(
+        event.id
+      );
+
+    if (alreadyProcessed) {
+      console.log(
+        "[stripe-webhook] duplicate event ignored:",
+        event.id
+      );
+
+      return NextResponse.json(
+        {
+          ok: true,
+          deduped: true,
+        },
+        {
+          status: 200,
+        }
+      );
     }
 
     switch (event.type) {
@@ -207,7 +254,14 @@ export async function POST(req: Request) {
           supabaseUserId,
         });
 
-        if (!supabaseUserId || !subscriptionId) break;
+        if (
+          !supabaseUserId ||
+          !subscriptionId
+        ) {
+          throw new Error(
+            `Could not resolve checkout session ${session.id} to a TurnTableAI user and subscription.`
+          );
+        }
 
         const sub = await stripe.subscriptions.retrieve(subscriptionId);
 
@@ -242,16 +296,44 @@ export async function POST(req: Request) {
           supabaseUserId,
         });
 
-        if (!supabaseUserId) break;
+        if (!supabaseUserId) {
+          throw new Error(
+            `Could not resolve subscription ${sub.id} to a TurnTableAI user.`
+          );
+        }
+
+        /*
+         * Stripe does not guarantee webhook delivery order.
+         *
+         * Re-read the subscription so an older delayed webhook
+         * cannot overwrite the profile with stale subscription
+         * status.
+         */
+        const latestSub =
+          await stripe.subscriptions.retrieve(
+            sub.id
+          );
+
+        const latestCustomerId =
+          getCustomerIdFromObj(
+            latestSub
+          ) ??
+          stripeCustomerId;
 
         await upsertProfile({
           supabaseUserId,
-          stripeCustomerId,
-          stripeSubscriptionId: sub.id ?? null,
-          stripeSubscriptionStatus: (sub.status as any) ?? null,
-          currentPeriodEndIso: toIsoFromUnixSeconds(
-            (sub as any).current_period_end
-          ),
+          stripeCustomerId:
+            latestCustomerId,
+          stripeSubscriptionId:
+            latestSub.id ?? null,
+          stripeSubscriptionStatus:
+            (latestSub.status as any) ??
+            null,
+          currentPeriodEndIso:
+            toIsoFromUnixSeconds(
+              (latestSub as any)
+                .current_period_end
+            ),
         });
 
         break;
@@ -273,7 +355,11 @@ export async function POST(req: Request) {
           supabaseUserId,
         });
 
-        if (!supabaseUserId) break;
+        if (!supabaseUserId) {
+          throw new Error(
+            `Could not resolve deleted subscription ${sub.id} to a TurnTableAI user.`
+          );
+        }
 
         await upsertProfile({
           supabaseUserId,
@@ -310,7 +396,11 @@ export async function POST(req: Request) {
           stripeCustomerId,
         });
 
-        if (!supabaseUserId) break;
+        if (!supabaseUserId) {
+          throw new Error(
+            `Could not resolve failed-payment subscription ${sub.id} to a TurnTableAI user.`
+          );
+        }
 
         await upsertProfile({
           supabaseUserId,
@@ -329,7 +419,18 @@ export async function POST(req: Request) {
         break;
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    await markEventProcessed(
+      event
+    );
+
+    return NextResponse.json(
+      {
+        ok: true,
+      },
+      {
+        status: 200,
+      }
+    );
   } catch (err: any) {
     console.error("[stripe-webhook] error:", err);
     return NextResponse.json(
