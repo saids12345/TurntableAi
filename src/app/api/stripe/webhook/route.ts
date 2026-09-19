@@ -12,6 +12,57 @@ function toIsoFromUnixSeconds(sec: unknown): string | null {
   return new Date(sec * 1000).toISOString();
 }
 
+/**
+ * Stripe's newer API versions moved current_period_end from
+ * the Subscription object to individual SubscriptionItems.
+ *
+ * During a trial, trial_end is the most useful customer-facing
+ * date. For active subscriptions, use the latest item period end.
+ *
+ * The legacy fallback keeps this compatible with older Stripe
+ * API versions as well.
+ */
+function getSubscriptionPeriodEndUnix(
+  sub: Stripe.Subscription
+): number | null {
+  const trialEnd =
+    (sub as any).trial_end;
+
+  if (
+    sub.status === "trialing" &&
+    typeof trialEnd === "number"
+  ) {
+    return trialEnd;
+  }
+
+  const itemPeriodEnds =
+    sub.items?.data
+      .map(
+        (item) =>
+          (item as any)
+            .current_period_end
+      )
+      .filter(
+        (value): value is number =>
+          typeof value === "number"
+      ) ?? [];
+
+  if (itemPeriodEnds.length > 0) {
+    return Math.max(
+      ...itemPeriodEnds
+    );
+  }
+
+  const legacyPeriodEnd =
+    (sub as any)
+      .current_period_end;
+
+  return typeof legacyPeriodEnd ===
+    "number"
+    ? legacyPeriodEnd
+    : null;
+}
+
 function getSupabaseUserIdFromMetadata(obj: any): string | null {
   const id = obj?.metadata?.supabase_user_id;
   return typeof id === "string" && id.length > 0 ? id : null;
@@ -270,9 +321,12 @@ export async function POST(req: Request) {
           stripeCustomerId,
           stripeSubscriptionId: sub.id ?? null,
           stripeSubscriptionStatus: (sub.status as any) ?? null,
-          currentPeriodEndIso: toIsoFromUnixSeconds(
-            (sub as any).current_period_end
-          ),
+          currentPeriodEndIso:
+            toIsoFromUnixSeconds(
+              getSubscriptionPeriodEndUnix(
+                sub
+              )
+            ),
         });
 
         break;
@@ -331,8 +385,9 @@ export async function POST(req: Request) {
             null,
           currentPeriodEndIso:
             toIsoFromUnixSeconds(
-              (latestSub as any)
-                .current_period_end
+              getSubscriptionPeriodEndUnix(
+                latestSub
+              )
             ),
         });
 
@@ -407,9 +462,12 @@ export async function POST(req: Request) {
           stripeCustomerId,
           stripeSubscriptionId: sub.id ?? null,
           stripeSubscriptionStatus: (sub.status as any) ?? null,
-          currentPeriodEndIso: toIsoFromUnixSeconds(
-            (sub as any).current_period_end
-          ),
+          currentPeriodEndIso:
+            toIsoFromUnixSeconds(
+              getSubscriptionPeriodEndUnix(
+                sub
+              )
+            ),
         });
 
         break;
