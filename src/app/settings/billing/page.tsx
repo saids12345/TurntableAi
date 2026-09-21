@@ -37,7 +37,9 @@ export default async function BillingSettingsPage() {
   // Load billing profile
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, is_pro, stripe_subscription_status, current_period_end")
+    .select(
+      "plan, is_pro, stripe_subscription_status, current_period_end, stripe_cancel_at"
+    )
     .eq("id", user.id)
     .maybeSingle();
 
@@ -52,17 +54,30 @@ export default async function BillingSettingsPage() {
 
   const planLabel = (profile?.plan ?? "free").toString();
   const statusLabel = stripeStatus ?? "—";
+
   const periodEndLabel = profile?.current_period_end
-  ? new Date(profile.current_period_end as any).toLocaleDateString(
-      undefined,
-      {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        timeZone: "UTC",
-      }
-    )
-  : "—";
+    ? new Date(profile.current_period_end as any).toLocaleDateString(
+        undefined,
+        {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC",
+        }
+      )
+    : "—";
+
+  const cancelAtLabel = profile?.stripe_cancel_at
+    ? new Date(profile.stripe_cancel_at as any).toLocaleDateString(
+        undefined,
+        {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC",
+        }
+      )
+    : null;
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-6">
@@ -100,6 +115,14 @@ export default async function BillingSettingsPage() {
             </div>
           </div>
         </div>
+        {cancelAtLabel && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/70">Cancellation</span>
+                <span className="text-yellow-300">
+                  Scheduled for {cancelAtLabel}
+                </span>
+              </div>
+            )}
 
         <div className="mt-5">
           <BillingSettingsClient

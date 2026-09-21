@@ -11,6 +11,7 @@ type Props = {
   plan?: string;
   stripeStatus?: string | null;
   currentPeriodEnd?: string | null;
+  cancelAt?: string | null;
   nextPath?: string;
 };
 
@@ -31,7 +32,6 @@ function formatDateMaybe(iso?: string | null) {
   });
 }
 
-
 export default function BillingClient({
   authed,
   email,
@@ -39,6 +39,7 @@ export default function BillingClient({
   plan,
   stripeStatus,
   currentPeriodEnd,
+  cancelAt,
   nextPath = "/",
 }: Props) {
   const [loading, setLoading] = useState<"checkout" | "portal" | null>(null);
@@ -69,6 +70,13 @@ export default function BillingClient({
     if (stripeStatus === "past_due") return `Past due since ${when}`;
     return when;
   }, [stripeStatus, currentPeriodEnd]);
+
+  const cancellationLabel =
+  (stripeStatus === "trialing" ||
+    stripeStatus === "active") &&
+  cancelAt
+    ? `Scheduled for ${formatDateMaybe(cancelAt)}`
+    : null;
 
   const [stripeReturn, setStripeReturn] = useState<{
     success: boolean;
@@ -292,6 +300,14 @@ export default function BillingClient({
                 {isPro ? "Unlocked (Trial/Paid)" : "Locked"}
               </span>
             </div>
+            {cancellationLabel && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/70">Cancellation</span>
+                <span className="text-yellow-300">
+                  {cancellationLabel}
+                </span>
+              </div>
+            )}
 
             <div className="flex items-center justify-between">
               <span className="text-white/70">Stripe status</span>
