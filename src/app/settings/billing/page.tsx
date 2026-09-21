@@ -53,8 +53,16 @@ export default async function BillingSettingsPage() {
   const planLabel = (profile?.plan ?? "free").toString();
   const statusLabel = stripeStatus ?? "—";
   const periodEndLabel = profile?.current_period_end
-    ? new Date(profile.current_period_end as any).toLocaleString()
-    : "—";
+  ? new Date(profile.current_period_end as any).toLocaleDateString(
+      undefined,
+      {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      }
+    )
+  : "—";
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-6">
