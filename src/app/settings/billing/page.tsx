@@ -113,9 +113,8 @@ export default async function BillingSettingsPage() {
               <span className="text-white/70">Current period end</span>
               <span className="text-white/90">{periodEndLabel}</span>
             </div>
-          </div>
-        </div>
-        {cancelAtLabel && (
+
+            {cancelAtLabel && (
               <div className="flex items-center justify-between">
                 <span className="text-white/70">Cancellation</span>
                 <span className="text-yellow-300">
@@ -123,6 +122,8 @@ export default async function BillingSettingsPage() {
                 </span>
               </div>
             )}
+          </div>
+        </div>
 
         <div className="mt-5">
           <BillingSettingsClient

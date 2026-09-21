@@ -53,34 +53,34 @@ function getSubscriptionPeriodEndUnix(
     );
   }
 
-  const legacyPeriodEnd =
-  (sub as any)
-    .current_period_end;
+    const legacyPeriodEnd =
+    (sub as any)
+      .current_period_end;
 
-return typeof legacyPeriodEnd ===
-  "number"
-  ? legacyPeriodEnd
-  : null;
+  return typeof legacyPeriodEnd ===
+    "number"
+    ? legacyPeriodEnd
+    : null;
 }
 
 function getSubscriptionCancelAtUnix(
-sub: Stripe.Subscription
+  sub: Stripe.Subscription
 ): number | null {
-const explicitCancelAt =
-  (sub as any).cancel_at;
+  const explicitCancelAt =
+    (sub as any).cancel_at;
 
-if (typeof explicitCancelAt === "number") {
-  return explicitCancelAt;
-}
+  if (typeof explicitCancelAt === "number") {
+    return explicitCancelAt;
+  }
 
-const cancelAtPeriodEnd =
-  (sub as any).cancel_at_period_end === true;
+  const cancelAtPeriodEnd =
+    (sub as any).cancel_at_period_end === true;
 
-if (cancelAtPeriodEnd) {
-  return getSubscriptionPeriodEndUnix(sub);
-}
+  if (cancelAtPeriodEnd) {
+    return getSubscriptionPeriodEndUnix(sub);
+  }
 
-return null;
+  return null;
 }
 
 function getSupabaseUserIdFromMetadata(obj: any): string | null {
@@ -339,7 +339,7 @@ export async function POST(req: Request) {
 
         const sub = await stripe.subscriptions.retrieve(subscriptionId);
 
-        await upsertProfile({
+                await upsertProfile({
           supabaseUserId,
           stripeCustomerId,
           stripeSubscriptionId: sub.id ?? null,
@@ -350,7 +350,7 @@ export async function POST(req: Request) {
                 sub
               )
             ),
-            stripeCancelAtIso:
+          stripeCancelAtIso:
             toIsoFromUnixSeconds(
               getSubscriptionCancelAtUnix(
                 sub
@@ -403,7 +403,7 @@ export async function POST(req: Request) {
           ) ??
           stripeCustomerId;
 
-        await upsertProfile({
+                await upsertProfile({
           supabaseUserId,
           stripeCustomerId:
             latestCustomerId,
@@ -418,7 +418,7 @@ export async function POST(req: Request) {
                 latestSub
               )
             ),
-            stripeCancelAtIso:
+          stripeCancelAtIso:
             toIsoFromUnixSeconds(
               getSubscriptionCancelAtUnix(
                 latestSub
@@ -493,7 +493,7 @@ export async function POST(req: Request) {
           );
         }
 
-        await upsertProfile({
+                await upsertProfile({
           supabaseUserId,
           stripeCustomerId,
           stripeSubscriptionId: sub.id ?? null,
@@ -504,7 +504,7 @@ export async function POST(req: Request) {
                 sub
               )
             ),
-            stripeCancelAtIso:
+          stripeCancelAtIso:
             toIsoFromUnixSeconds(
               getSubscriptionCancelAtUnix(
                 sub
