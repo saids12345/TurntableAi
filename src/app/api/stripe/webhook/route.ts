@@ -53,7 +53,7 @@ function getSubscriptionPeriodEndUnix(
     );
   }
 
-    const legacyPeriodEnd =
+  const legacyPeriodEnd =
     (sub as any)
       .current_period_end;
 
@@ -339,7 +339,7 @@ export async function POST(req: Request) {
 
         const sub = await stripe.subscriptions.retrieve(subscriptionId);
 
-                await upsertProfile({
+        await upsertProfile({
           supabaseUserId,
           stripeCustomerId,
           stripeSubscriptionId: sub.id ?? null,
@@ -403,7 +403,7 @@ export async function POST(req: Request) {
           ) ??
           stripeCustomerId;
 
-                await upsertProfile({
+        await upsertProfile({
           supabaseUserId,
           stripeCustomerId:
             latestCustomerId,
@@ -493,7 +493,7 @@ export async function POST(req: Request) {
           );
         }
 
-                await upsertProfile({
+        await upsertProfile({
           supabaseUserId,
           stripeCustomerId,
           stripeSubscriptionId: sub.id ?? null,

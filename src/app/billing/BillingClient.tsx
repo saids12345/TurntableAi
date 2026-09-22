@@ -72,11 +72,11 @@ export default function BillingClient({
   }, [stripeStatus, currentPeriodEnd]);
 
   const cancellationLabel =
-  (stripeStatus === "trialing" ||
-    stripeStatus === "active") &&
-  cancelAt
-    ? `Scheduled for ${formatDateMaybe(cancelAt)}`
-    : null;
+    (stripeStatus === "trialing" ||
+      stripeStatus === "active") &&
+    cancelAt
+      ? `Scheduled for ${formatDateMaybe(cancelAt)}`
+      : null;
 
   const [stripeReturn, setStripeReturn] = useState<{
     success: boolean;
