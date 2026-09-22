@@ -39,7 +39,7 @@ export default async function BillingPage({
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "plan, is_pro, stripe_subscription_status, current_period_end, stripe_cancel_at"
+      "plan, is_pro, stripe_subscription_status, current_period_end, stripe_cancel_at, stripe_trial_used_at"
     )
     .eq("id", user.id)
     .maybeSingle();
@@ -62,6 +62,7 @@ export default async function BillingPage({
       stripeStatus={stripeStatus}
       currentPeriodEnd={(profile?.current_period_end as any) ?? null}
       cancelAt={(profile?.stripe_cancel_at as any) ?? null}
+      trialUsed={Boolean(profile?.stripe_trial_used_at)}
       nextPath={next}
     />
   );

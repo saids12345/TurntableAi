@@ -7,6 +7,7 @@ type Props = {
   authed: boolean;
   isPro?: boolean;
   stripeStatus?: string | null;
+  trialUsed?: boolean;
   nextPath?: string; // where to go after unlocking (optional)
 };
 
@@ -14,6 +15,7 @@ export default function BillingSettingsClient({
   authed,
   isPro = false,
   stripeStatus = null,
+  trialUsed = false,
   nextPath = "/",
 }: Props) {
   const [loading, setLoading] = useState<"checkout" | "portal" | null>(null);
@@ -230,7 +232,9 @@ export default function BillingSettingsClient({
           >
             {loading === "checkout"
               ? "Redirecting to Stripe..."
-              : "Start 14-day free trial ($100/mo after)"}
+              : trialUsed
+                ? "Resubscribe — $100/mo"
+                : "Start 14-day free trial ($100/mo after)"}
           </button>
 
           {canOpenPortal && (
@@ -263,12 +267,16 @@ export default function BillingSettingsClient({
 
           {stripeReturn.canceled && (
             <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-200">
-              Checkout canceled. You can start the trial again anytime.
+              {trialUsed
+                ? "Checkout canceled. You can resubscribe anytime."
+                : "Checkout canceled. You can start the trial anytime."}
             </div>
           )}
 
           <p className="text-xs text-white/60">
-            Card required to start trial. Cancel anytime in the billing portal.
+            {trialUsed
+              ? "Your free trial has already been used. Resubscription starts at $100/month."
+              : "Card required to start trial. Cancel anytime in the billing portal."}
           </p>
         </>
       )}

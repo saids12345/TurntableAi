@@ -12,6 +12,7 @@ type Props = {
   stripeStatus?: string | null;
   currentPeriodEnd?: string | null;
   cancelAt?: string | null;
+  trialUsed?: boolean;
   nextPath?: string;
 };
 
@@ -40,6 +41,7 @@ export default function BillingClient({
   stripeStatus,
   currentPeriodEnd,
   cancelAt,
+  trialUsed = false,
   nextPath = "/",
 }: Props) {
   const [loading, setLoading] = useState<"checkout" | "portal" | null>(null);
@@ -361,21 +363,29 @@ export default function BillingClient({
                     Your payment is past due, so access is currently locked.
                     Update your billing details to restore Pro access.
                   </>
+                ) : stripeStatus === "canceled" ? (
+                  <>
+                    Your subscription has ended. Resubscribe to restore Pro
+                    access.
+                  </>
                 ) : stripeStatus ? (
                   <>
                     Your Stripe subscription exists, but access is currently
                     locked. Please update billing to restore access.
                   </>
                 ) : (
-                  "You're not on an active trial/subscription yet. Start a trial to unlock all features."
+                  trialUsed
+                    ? "You're not currently subscribed. Resubscribe to restore Pro access."
+                    : "You're not on an active trial/subscription yet. Start a trial to unlock all features."
                 )}
               </div>
             )}
 
             {stripeReturn.canceled && (
               <div className="mt-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-200">
-                Checkout canceled. No worries — you can start the trial again
-                anytime.
+                {trialUsed
+                  ? "Checkout canceled. You can resubscribe anytime."
+                  : "Checkout canceled. You can start the trial anytime."}
               </div>
             )}
           </div>
@@ -425,7 +435,9 @@ export default function BillingClient({
                 >
                   {loading === "checkout"
                     ? "Redirecting to Stripe..."
-                    : "Start 14-day free trial ($100/mo after)"}
+                    : trialUsed
+                      ? "Resubscribe — $100/mo"
+                      : "Start 14-day free trial ($100/mo after)"}
                 </button>
               )}
 
@@ -442,8 +454,9 @@ export default function BillingClient({
               )}
 
               <p className="text-xs text-white/60">
-                Card required to start trial. Cancel anytime in the billing
-                portal.
+                {trialUsed
+                  ? "Your free trial has already been used. Resubscription starts at $100/month."
+                  : "Card required to start trial. Cancel anytime in the billing portal."}
               </p>
 
               <a

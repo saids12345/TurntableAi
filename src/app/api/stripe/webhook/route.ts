@@ -83,6 +83,71 @@ function getSubscriptionCancelAtUnix(
   return null;
 }
 
+function getSubscriptionTrialUsedAtIso(
+  sub: Stripe.Subscription
+): string | null {
+  const trialStart =
+    (sub as any).trial_start;
+
+  if (typeof trialStart === "number") {
+    return toIsoFromUnixSeconds(
+      trialStart
+    );
+  }
+
+  if (sub.status === "trialing") {
+    const created =
+      (sub as any).created;
+
+    return typeof created === "number"
+      ? toIsoFromUnixSeconds(created)
+      : new Date().toISOString();
+  }
+
+  return null;
+}
+
+async function markTrialUsedIfNeeded(args: {
+  supabaseUserId: string;
+  sub: Stripe.Subscription;
+}) {
+  const trialUsedAtIso =
+    getSubscriptionTrialUsedAtIso(
+      args.sub
+    );
+
+  if (!trialUsedAtIso) {
+    return;
+  }
+
+  const supabaseAdmin =
+    getSupabaseAdmin();
+
+  const { error } =
+    await supabaseAdmin
+      .from("profiles")
+      .update({
+        stripe_trial_used_at:
+          trialUsedAtIso,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "id",
+        args.supabaseUserId
+      )
+      .is(
+        "stripe_trial_used_at",
+        null
+      );
+
+  if (error) {
+    throw new Error(
+      `Failed to mark Stripe trial used: ${error.message}`
+    );
+  }
+}
+
 function getSupabaseUserIdFromMetadata(obj: any): string | null {
   const id = obj?.metadata?.supabase_user_id;
   return typeof id === "string" && id.length > 0 ? id : null;
@@ -358,6 +423,11 @@ export async function POST(req: Request) {
             ),
         });
 
+        await markTrialUsedIfNeeded({
+          supabaseUserId,
+          sub,
+        });
+
         break;
       }
 
@@ -424,6 +494,11 @@ export async function POST(req: Request) {
                 latestSub
               )
             ),
+        });
+
+        await markTrialUsedIfNeeded({
+          supabaseUserId,
+          sub: latestSub,
         });
 
         break;
