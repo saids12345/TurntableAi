@@ -38,7 +38,7 @@ export default async function BillingSettingsPage() {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "plan, is_pro, stripe_subscription_status, current_period_end, stripe_cancel_at"
+      "plan, is_pro, stripe_subscription_status, current_period_end, stripe_cancel_at, stripe_trial_used_at"
     )
     .eq("id", user.id)
     .maybeSingle();
@@ -130,6 +130,7 @@ export default async function BillingSettingsPage() {
             authed={true}
             isPro={isPro}
             stripeStatus={stripeStatus}
+            trialUsed={Boolean(profile?.stripe_trial_used_at)}
             nextPath="/settings/billing"
           />
         </div>

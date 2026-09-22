@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select(
-        "stripe_customer_id, stripe_subscription_id, stripe_subscription_status"
+        "stripe_customer_id, stripe_subscription_id, stripe_subscription_status, stripe_trial_used_at"
       )
       .eq("id", user.id)
       .maybeSingle();
@@ -77,6 +77,8 @@ export async function POST(req: Request) {
     // If already has an active/trialing subscription, don't create another.
     // (We allow incomplete/incomplete_expired to retry.)
     const status = profile?.stripe_subscription_status ?? null;
+    const hasUsedTrial = Boolean(profile?.stripe_trial_used_at);
+
     const alreadySubscribed =
       status === "active" || status === "trialing" || status === "past_due";
 
@@ -151,11 +153,18 @@ export async function POST(req: Request) {
         // Card required to start trial
         payment_method_collection: "always",
 
-        subscription_data: {
-          trial_period_days: 14,
-          // 🔥 This metadata is what your webhook should use to update profiles reliably
-          metadata: { supabase_user_id: user.id },
-        },
+        subscription_data: hasUsedTrial
+          ? {
+              metadata: {
+                supabase_user_id: user.id,
+              },
+            }
+          : {
+              trial_period_days: 14,
+              metadata: {
+                supabase_user_id: user.id,
+              },
+            },
 
         success_url: successUrl,
         cancel_url: cancelUrl,
