@@ -63,6 +63,26 @@ function getSubscriptionPeriodEndUnix(
     : null;
 }
 
+function getSubscriptionCancelAtUnix(
+  sub: Stripe.Subscription
+): number | null {
+  const explicitCancelAt =
+    (sub as any).cancel_at;
+
+  if (typeof explicitCancelAt === "number") {
+    return explicitCancelAt;
+  }
+
+  const cancelAtPeriodEnd =
+    (sub as any).cancel_at_period_end === true;
+
+  if (cancelAtPeriodEnd) {
+    return getSubscriptionPeriodEndUnix(sub);
+  }
+
+  return null;
+}
+
 function getSupabaseUserIdFromMetadata(obj: any): string | null {
   const id = obj?.metadata?.supabase_user_id;
   return typeof id === "string" && id.length > 0 ? id : null;
@@ -196,6 +216,7 @@ async function upsertProfile(args: {
   stripeSubscriptionId: string | null;
   stripeSubscriptionStatus: string | null;
   currentPeriodEndIso: string | null;
+  stripeCancelAtIso: string | null;
 }) {
   const {
     supabaseUserId,
@@ -203,6 +224,7 @@ async function upsertProfile(args: {
     stripeSubscriptionId,
     stripeSubscriptionStatus,
     currentPeriodEndIso,
+    stripeCancelAtIso,
   } = args;
 
   const isPro = computeIsPro(stripeSubscriptionStatus);
@@ -214,6 +236,7 @@ async function upsertProfile(args: {
     stripe_subscription_id: stripeSubscriptionId,
     stripe_subscription_status: stripeSubscriptionStatus,
     current_period_end: currentPeriodEndIso,
+    stripe_cancel_at: stripeCancelAtIso,
     is_pro: isPro,
     plan: isPro ? "pro" : "free",
     updated_at: new Date().toISOString(),
@@ -327,6 +350,12 @@ export async function POST(req: Request) {
                 sub
               )
             ),
+          stripeCancelAtIso:
+            toIsoFromUnixSeconds(
+              getSubscriptionCancelAtUnix(
+                sub
+              )
+            ),
         });
 
         break;
@@ -389,6 +418,12 @@ export async function POST(req: Request) {
                 latestSub
               )
             ),
+          stripeCancelAtIso:
+            toIsoFromUnixSeconds(
+              getSubscriptionCancelAtUnix(
+                latestSub
+              )
+            ),
         });
 
         break;
@@ -422,6 +457,7 @@ export async function POST(req: Request) {
           stripeSubscriptionId: null,
           stripeSubscriptionStatus: "canceled",
           currentPeriodEndIso: null,
+          stripeCancelAtIso: null,
         });
 
         break;
@@ -465,6 +501,12 @@ export async function POST(req: Request) {
           currentPeriodEndIso:
             toIsoFromUnixSeconds(
               getSubscriptionPeriodEndUnix(
+                sub
+              )
+            ),
+          stripeCancelAtIso:
+            toIsoFromUnixSeconds(
+              getSubscriptionCancelAtUnix(
                 sub
               )
             ),
