@@ -64,12 +64,19 @@ export default function BillingClient({
   const statusLabel = stripeStatus ?? "—";
 
   const periodLabel = useMemo(() => {
-    if (!stripeStatus || !currentPeriodEnd) return "—";
+    if (!stripeStatus) return "—";
+
+    if (stripeStatus === "past_due") {
+      return "Payment past due";
+    }
+
+    if (!currentPeriodEnd) return "—";
+
     const when = formatDateMaybe(currentPeriodEnd);
 
     if (stripeStatus === "trialing") return `Trial ends ${when}`;
     if (stripeStatus === "active") return `Renews on ${when}`;
-    if (stripeStatus === "past_due") return `Past due since ${when}`;
+
     return when;
   }, [stripeStatus, currentPeriodEnd]);
 
@@ -99,12 +106,21 @@ export default function BillingClient({
 
   useEffect(() => {
     if (!authed) return;
+
+    if (stripeStatus === "past_due") {
+      try {
+        sessionStorage.removeItem("tt_billing_refresh_count");
+      } catch {}
+      return;
+    }
+
     if (isPro) {
       try {
         sessionStorage.removeItem("tt_billing_refresh_count");
       } catch {}
       return;
     }
+
     if (!stripeReturn.success) {
       try {
         sessionStorage.removeItem("tt_billing_refresh_count");
@@ -130,7 +146,7 @@ export default function BillingClient({
     }, 2000);
 
     return () => clearTimeout(t);
-  }, [authed, isPro, stripeReturn.success]);
+  }, [authed, isPro, stripeStatus, stripeReturn.success]);
 
   const [showSuccess, setShowSuccess] = useState(false);
   useEffect(() => {
@@ -338,7 +354,12 @@ export default function BillingClient({
                     : "border border-white/10 bg-black/30 text-white/70"
                 }`}
               >
-                {stripeReturn.success ? (
+                        {isPastDue ? (
+                  <>
+                    Your payment is past due, so access is currently locked.
+                    Update your billing details to restore Pro access.
+                  </>
+                ) : stripeReturn.success ? (
                   <>
                     Stripe checkout returned successfully — syncing access…
                     <div className="mt-2">
@@ -357,11 +378,6 @@ export default function BillingClient({
                     Your Stripe account already shows an active trial/subscription.
                     Use <span className="text-white/90">Manage billing</span> to
                     update payment method or cancel.
-                  </>
-                ) : isPastDue ? (
-                  <>
-                    Your payment is past due, so access is currently locked.
-                    Update your billing details to restore Pro access.
                   </>
                 ) : stripeStatus === "canceled" ? (
                   <>
@@ -417,7 +433,17 @@ export default function BillingClient({
             </button>
           ) : (
             <>
-              {alreadyHasAccessByStripe ? (
+                            {isPastDue ? (
+                <button
+                  onClick={openPortal}
+                  disabled={loading !== null}
+                  className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-3 font-medium text-black disabled:opacity-60"
+                >
+                  {loading === "portal"
+                    ? "Opening billing portal..."
+                    : "Update payment method"}
+                </button>
+              ) : alreadyHasAccessByStripe ? (
                 <button
                   onClick={openPortal}
                   disabled={loading !== null}
@@ -441,7 +467,7 @@ export default function BillingClient({
                 </button>
               )}
 
-              {canOpenPortal && (
+              {canOpenPortal && !isPastDue && (
                 <button
                   onClick={openPortal}
                   disabled={loading !== null}
@@ -454,9 +480,11 @@ export default function BillingClient({
               )}
 
               <p className="text-xs text-white/60">
-                {trialUsed
-                  ? "Your free trial has already been used. Resubscription starts at $100/month."
-                  : "Card required to start trial. Cancel anytime in the billing portal."}
+                {isPastDue
+                  ? "Update your payment method to restore Pro access."
+                  : trialUsed
+                    ? "Your free trial has already been used. Resubscription starts at $100/month."
+                    : "Card required to start trial. Cancel anytime in the billing portal."}
               </p>
 
               <a

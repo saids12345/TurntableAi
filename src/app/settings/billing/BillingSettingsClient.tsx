@@ -32,7 +32,7 @@ export default function BillingSettingsClient({
   }, [settingsBillingPath]);
 
   const canOpenPortal = authed && !!stripeStatus;
-
+  const isPastDue = stripeStatus === "past_due";
   // Read Stripe return flags from URL
   const [stripeReturn, setStripeReturn] = useState<{
     success: boolean;
@@ -57,6 +57,13 @@ export default function BillingSettingsClient({
    */
   useEffect(() => {
     if (!authed) return;
+
+    if (isPastDue) {
+      try {
+        sessionStorage.removeItem("tt_settings_billing_refresh_count");
+      } catch {}
+      return;
+    }
 
     if (isPro) {
       try {
@@ -93,7 +100,7 @@ export default function BillingSettingsClient({
     }, 2000);
 
     return () => clearTimeout(t);
-  }, [authed, isPro, stripeReturn.success]);
+  }, [authed, isPro, isPastDue, stripeReturn.success]);
 
   /**
    * Optional: after they become Pro, send them back to where they came from
@@ -225,19 +232,31 @@ export default function BillingSettingsClient({
         </button>
       ) : (
         <>
-          <button
-            onClick={startTrial}
-            disabled={loading !== null}
-            className="inline-flex items-center justify-center rounded-xl bg-white text-black px-4 py-3 font-medium disabled:opacity-60"
-          >
-            {loading === "checkout"
-              ? "Redirecting to Stripe..."
-              : trialUsed
-                ? "Resubscribe — $100/mo"
-                : "Start 14-day free trial ($100/mo after)"}
-          </button>
+              {isPastDue ? (
+            <button
+              onClick={openPortal}
+              disabled={loading !== null}
+              className="inline-flex items-center justify-center rounded-xl bg-white text-black px-4 py-3 font-medium disabled:opacity-60"
+            >
+              {loading === "portal"
+                ? "Opening billing portal..."
+                : "Update payment method"}
+            </button>
+          ) : (
+            <button
+              onClick={startTrial}
+              disabled={loading !== null}
+              className="inline-flex items-center justify-center rounded-xl bg-white text-black px-4 py-3 font-medium disabled:opacity-60"
+            >
+              {loading === "checkout"
+                ? "Redirecting to Stripe..."
+                : trialUsed
+                  ? "Resubscribe — $100/mo"
+                  : "Start 14-day free trial ($100/mo after)"}
+            </button>
+          )}
 
-          {canOpenPortal && (
+          {canOpenPortal && !isPastDue && (
             <button
               onClick={openPortal}
               disabled={loading !== null}
@@ -249,7 +268,7 @@ export default function BillingSettingsClient({
             </button>
           )}
 
-          {stripeReturn.success && (
+          {stripeReturn.success && !isPastDue && (
             <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
               Stripe checkout returned successfully — syncing access…
               <div className="mt-2">
@@ -274,9 +293,11 @@ export default function BillingSettingsClient({
           )}
 
           <p className="text-xs text-white/60">
-            {trialUsed
-              ? "Your free trial has already been used. Resubscription starts at $100/month."
-              : "Card required to start trial. Cancel anytime in the billing portal."}
+            {isPastDue
+              ? "Update your payment method to restore Pro access."
+              : trialUsed
+                ? "Your free trial has already been used. Resubscription starts at $100/month."
+                : "Card required to start trial. Cancel anytime in the billing portal."}
           </p>
         </>
       )}
