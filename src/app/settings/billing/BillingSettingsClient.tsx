@@ -232,7 +232,7 @@ export default function BillingSettingsClient({
         </button>
       ) : (
         <>
-              {isPastDue ? (
+          {isPastDue ? (
             <button
               onClick={openPortal}
               disabled={loading !== null}

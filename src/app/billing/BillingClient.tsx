@@ -354,7 +354,7 @@ export default function BillingClient({
                     : "border border-white/10 bg-black/30 text-white/70"
                 }`}
               >
-                        {isPastDue ? (
+                {isPastDue ? (
                   <>
                     Your payment is past due, so access is currently locked.
                     Update your billing details to restore Pro access.
@@ -433,7 +433,7 @@ export default function BillingClient({
             </button>
           ) : (
             <>
-                            {isPastDue ? (
+              {isPastDue ? (
                 <button
                   onClick={openPortal}
                   disabled={loading !== null}
