@@ -584,7 +584,7 @@ export async function POST(req: Request) {
           await findAuthoritativeSubscription({
             stripeCustomerId,
             excludedSubscriptionId: sub.id,
-            });
+          });
 
         if (replacementSub) {
           const replacementCustomerId =
