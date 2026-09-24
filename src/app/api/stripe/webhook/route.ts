@@ -275,6 +275,59 @@ async function resolveSupabaseUserId(args: {
   return null;
 }
 
+async function findReplacementSubscription(args: {
+  stripeCustomerId: string | null;
+  deletedSubscriptionId: string;
+}): Promise<Stripe.Subscription | null> {
+  const {
+    stripeCustomerId,
+    deletedSubscriptionId,
+  } = args;
+
+  if (!stripeCustomerId) {
+    return null;
+  }
+
+  const subscriptions =
+    await stripe.subscriptions.list({
+      customer: stripeCustomerId,
+      status: "all",
+      limit: 100,
+    });
+
+  const replacement =
+    subscriptions.data
+      .filter(
+        (sub) =>
+          sub.id !==
+            deletedSubscriptionId &&
+          sub.status !== "canceled" &&
+          sub.status !==
+            "incomplete_expired"
+      )
+      .sort((a, b) => {
+        const accessPriorityDiff =
+          Number(
+            computeIsPro(b.status)
+          ) -
+          Number(
+            computeIsPro(a.status)
+          );
+
+        if (
+          accessPriorityDiff !== 0
+        ) {
+          return accessPriorityDiff;
+        }
+
+        return (
+          (b.created ?? 0) -
+          (a.created ?? 0)
+        );
+      })[0] ?? null;
+  return replacement;
+}
+
 async function upsertProfile(args: {
   supabaseUserId: string;
   stripeCustomerId: string | null;
@@ -526,14 +579,69 @@ export async function POST(req: Request) {
           );
         }
 
-        await upsertProfile({
-          supabaseUserId,
-          stripeCustomerId,
-          stripeSubscriptionId: null,
-          stripeSubscriptionStatus: "canceled",
-          currentPeriodEndIso: null,
-          stripeCancelAtIso: null,
-        });
+        const replacementSub =
+          await findReplacementSubscription({
+            stripeCustomerId,
+            deletedSubscriptionId: sub.id,
+          });
+
+        if (replacementSub) {
+          const replacementCustomerId =
+            getCustomerIdFromObj(
+              replacementSub
+            ) ??
+            stripeCustomerId;
+
+          console.log(
+            "[stripe-webhook] deleted subscription replaced by current subscription",
+            {
+              deletedSubscriptionId:
+                sub.id,
+              replacementSubscriptionId:
+                replacementSub.id,
+              replacementStatus:
+                replacementSub.status,
+              supabaseUserId,
+            }
+          );
+
+          await upsertProfile({
+            supabaseUserId,
+            stripeCustomerId:
+              replacementCustomerId,
+            stripeSubscriptionId:
+              replacementSub.id,
+            stripeSubscriptionStatus:
+              replacementSub.status,
+            currentPeriodEndIso:
+              toIsoFromUnixSeconds(
+                getSubscriptionPeriodEndUnix(
+                  replacementSub
+                )
+              ),
+            stripeCancelAtIso:
+              toIsoFromUnixSeconds(
+                getSubscriptionCancelAtUnix(
+                  replacementSub
+                )
+              ),
+          });
+
+          await markTrialUsedIfNeeded({
+            supabaseUserId,
+            sub: replacementSub,
+          });
+        } else {
+          await upsertProfile({
+            supabaseUserId,
+            stripeCustomerId,
+            stripeSubscriptionId: null,
+            stripeSubscriptionStatus:
+              "canceled",
+            currentPeriodEndIso: null,
+            stripeCancelAtIso: null,
+          });
+        }
 
         break;
       }
