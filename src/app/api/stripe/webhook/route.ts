@@ -275,13 +275,13 @@ async function resolveSupabaseUserId(args: {
   return null;
 }
 
-async function findReplacementSubscription(args: {
+async function findAuthoritativeSubscription(args: {
   stripeCustomerId: string | null;
-  deletedSubscriptionId: string;
+  excludedSubscriptionId?: string | null;
 }): Promise<Stripe.Subscription | null> {
   const {
     stripeCustomerId,
-    deletedSubscriptionId,
+    excludedSubscriptionId = null,
   } = args;
 
   if (!stripeCustomerId) {
@@ -295,12 +295,12 @@ async function findReplacementSubscription(args: {
       limit: 100,
     });
 
-  const replacement =
+  const authoritativeSubscription =
     subscriptions.data
       .filter(
         (sub) =>
           sub.id !==
-            deletedSubscriptionId &&
+            excludedSubscriptionId &&
           sub.status !== "canceled" &&
           sub.status !==
             "incomplete_expired"
@@ -325,7 +325,8 @@ async function findReplacementSubscription(args: {
           (a.created ?? 0)
         );
       })[0] ?? null;
-  return replacement;
+
+  return authoritativeSubscription;
 }
 
 async function upsertProfile(args: {
@@ -580,10 +581,10 @@ export async function POST(req: Request) {
         }
 
         const replacementSub =
-          await findReplacementSubscription({
+          await findAuthoritativeSubscription({
             stripeCustomerId,
-            deletedSubscriptionId: sub.id,
-          });
+            excludedSubscriptionId: sub.id,
+            });
 
         if (replacementSub) {
           const replacementCustomerId =
@@ -642,6 +643,104 @@ export async function POST(req: Request) {
             stripeCancelAtIso: null,
           });
         }
+
+        break;
+      }
+      case "invoice.paid": {
+        const invoice =
+          event.data.object as Stripe.Invoice;
+
+        const stripeCustomerId =
+          getCustomerIdFromObj(invoice);
+
+        const invoiceSubscription =
+          (invoice as any)?.subscription;
+
+        const subscriptionId =
+          typeof invoiceSubscription ===
+          "string"
+            ? invoiceSubscription
+            : invoiceSubscription?.id ??
+              null;
+
+        console.log(
+          "[stripe-webhook] invoice.paid",
+          {
+            stripeCustomerId,
+            invoiceId: invoice.id,
+            subscriptionId,
+          }
+        );
+
+        if (!subscriptionId) {
+          break;
+        }
+
+        const invoiceSub =
+          await stripe.subscriptions.retrieve(
+            subscriptionId
+          );
+
+        const resolvedCustomerId =
+          getCustomerIdFromObj(invoiceSub) ??
+          stripeCustomerId;
+
+        const authoritativeSub =
+          await findAuthoritativeSubscription({
+            stripeCustomerId:
+              resolvedCustomerId,
+          });
+
+        const subToSync =
+          authoritativeSub ??
+          invoiceSub;
+
+        const supabaseUserId =
+          await resolveSupabaseUserId({
+            maybeSupabaseUserId:
+              getSupabaseUserIdFromMetadata(
+                subToSync
+              ),
+            stripeCustomerId:
+              resolvedCustomerId,
+          });
+
+        if (!supabaseUserId) {
+          throw new Error(
+            `Could not resolve paid-invoice subscription ${subToSync.id} to a TurnTableAI user.`
+          );
+        }
+
+        await upsertProfile({
+          supabaseUserId,
+          stripeCustomerId:
+            getCustomerIdFromObj(
+              subToSync
+            ) ??
+            resolvedCustomerId,
+          stripeSubscriptionId:
+            subToSync.id ?? null,
+          stripeSubscriptionStatus:
+            (subToSync.status as any) ??
+            null,
+          currentPeriodEndIso:
+            toIsoFromUnixSeconds(
+              getSubscriptionPeriodEndUnix(
+                subToSync
+              )
+            ),
+          stripeCancelAtIso:
+            toIsoFromUnixSeconds(
+              getSubscriptionCancelAtUnix(
+                subToSync
+              )
+            ),
+        });
+
+        await markTrialUsedIfNeeded({
+          supabaseUserId,
+          sub: subToSync,
+        });
 
         break;
       }
