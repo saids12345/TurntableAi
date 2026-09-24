@@ -510,49 +510,63 @@ export async function POST(req: Request) {
         }
 
         /*
-         * Stripe does not guarantee webhook delivery order.
+         * Stripe does not guarantee webhook delivery order,
+         * and a customer can have more than one subscription.
          *
-         * Re-read the subscription so an older delayed webhook
-         * cannot overwrite the profile with stale subscription
-         * status.
+         * Re-read the event subscription, then choose the
+         * authoritative current subscription for the customer
+         * before updating the TurnTableAI profile.
          */
-        const latestSub =
+        const latestEventSub =
           await stripe.subscriptions.retrieve(
             sub.id
           );
 
         const latestCustomerId =
           getCustomerIdFromObj(
-            latestSub
+            latestEventSub
           ) ??
           stripeCustomerId;
+
+        const authoritativeSub =
+          await findAuthoritativeSubscription({
+            stripeCustomerId:
+              latestCustomerId,
+          });
+
+        const subToSync =
+          authoritativeSub ??
+          latestEventSub;
 
         await upsertProfile({
           supabaseUserId,
           stripeCustomerId:
+            getCustomerIdFromObj(
+              subToSync
+            ) ??
             latestCustomerId,
           stripeSubscriptionId:
-            latestSub.id ?? null,
+            subToSync.id ?? null,
           stripeSubscriptionStatus:
-            (latestSub.status as any) ??
+            (subToSync.status as any) ??
             null,
           currentPeriodEndIso:
             toIsoFromUnixSeconds(
               getSubscriptionPeriodEndUnix(
-                latestSub
+                subToSync
               )
             ),
           stripeCancelAtIso:
             toIsoFromUnixSeconds(
               getSubscriptionCancelAtUnix(
-                latestSub
+                subToSync
               )
             ),
         });
 
         await markTrialUsedIfNeeded({
           supabaseUserId,
-          sub: latestSub,
+          sub: subToSync,
         });
 
         break;
