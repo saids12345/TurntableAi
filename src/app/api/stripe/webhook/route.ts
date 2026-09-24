@@ -763,33 +763,63 @@ export async function POST(req: Request) {
 
         if (!subscriptionId) break;
 
-        const sub = await stripe.subscriptions.retrieve(subscriptionId);
-        const supabaseUserId = await resolveSupabaseUserId({
-          maybeSupabaseUserId: getSupabaseUserIdFromMetadata(sub),
-          stripeCustomerId,
-        });
+        const invoiceSub =
+          await stripe.subscriptions.retrieve(
+            subscriptionId
+          );
+
+        const resolvedCustomerId =
+          getCustomerIdFromObj(invoiceSub) ??
+          stripeCustomerId;
+
+        const authoritativeSub =
+          await findAuthoritativeSubscription({
+            stripeCustomerId:
+              resolvedCustomerId,
+          });
+
+        const subToSync =
+          authoritativeSub ??
+          invoiceSub;
+
+        const supabaseUserId =
+          await resolveSupabaseUserId({
+            maybeSupabaseUserId:
+              getSupabaseUserIdFromMetadata(
+                subToSync
+              ),
+            stripeCustomerId:
+              resolvedCustomerId,
+          });
 
         if (!supabaseUserId) {
           throw new Error(
-            `Could not resolve failed-payment subscription ${sub.id} to a TurnTableAI user.`
+            `Could not resolve failed-payment subscription ${subToSync.id} to a TurnTableAI user.`
           );
         }
 
         await upsertProfile({
           supabaseUserId,
-          stripeCustomerId,
-          stripeSubscriptionId: sub.id ?? null,
-          stripeSubscriptionStatus: (sub.status as any) ?? null,
+          stripeCustomerId:
+            getCustomerIdFromObj(
+              subToSync
+            ) ??
+            resolvedCustomerId,
+          stripeSubscriptionId:
+            subToSync.id ?? null,
+          stripeSubscriptionStatus:
+            (subToSync.status as any) ??
+            null,
           currentPeriodEndIso:
             toIsoFromUnixSeconds(
               getSubscriptionPeriodEndUnix(
-                sub
+                subToSync
               )
             ),
           stripeCancelAtIso:
             toIsoFromUnixSeconds(
               getSubscriptionCancelAtUnix(
-                sub
+                subToSync
               )
             ),
         });
