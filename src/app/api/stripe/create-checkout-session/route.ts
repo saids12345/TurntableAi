@@ -186,56 +186,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, url: session.url }, { status: 200 });
   } catch (err: any) {
-    const stripeKey =
-      process.env.STRIPE_SECRET_KEY ?? "";
-
-    console.error(
-      "[stripe-checkout] failed",
-      {
-        keyPrefix:
-          stripeKey.slice(0, 8),
-        keyLength:
-          stripeKey.length,
-
-        errorName:
-          err?.name ?? null,
-        errorType:
-          err?.type ?? null,
-        errorCode:
-          err?.code ?? null,
-        rawType:
-          err?.rawType ?? null,
-        statusCode:
-          err?.statusCode ?? null,
-        requestId:
-          err?.requestId ?? null,
-        message:
-          err?.message ?? null,
-
-        detailName:
-          err?.raw?.detail?.name ??
-          null,
-        detailMessage:
-          err?.raw?.detail?.message ??
-          null,
-        detailCode:
-          err?.raw?.detail?.code ??
-          null,
-        detailCauseCode:
-          err?.raw?.detail?.cause?.code ??
-          null,
-        detailCauseMessage:
-          err?.raw?.detail?.cause?.message ??
-          null,
-      }
-    );
-
     return NextResponse.json(
       {
         ok: false,
-        error:
-          err?.message ||
-          "Unknown error creating checkout session",
+        error: err?.message || "Unknown error creating checkout session",
       },
       { status: 500 }
     );
