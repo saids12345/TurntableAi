@@ -3,13 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  buildSnapshotHash,
-  markPerformanceSnapshotsCaptured,
-  normalizePerformanceSnapshots,
-  shouldCapturePerformanceSnapshots,
-  type PerformanceSignalSnapshot,
-} from "@/lib/performanceSignals";
 import { track } from "@/lib/track";
 
 type HealthStatus = "healthy" | "watch" | "risk";
@@ -529,9 +522,6 @@ export default function PerformanceMonitorPage() {
 
   const [sortBy, setSortBy] = useState<"risk" | "revenue" | "labor">("risk");
   const [locationFilter, setLocationFilter] = useState<string>("all");
-  const [captureStatus, setCaptureStatus] = useState<
-    "idle" | "saving" | "saved" | "skipped" | "error"
-  >("idle");
 
   const [liveLocations, setLiveLocations] = useState<LocationPerformance[]>([]);
   const [liveAlerts, setLiveAlerts] = useState<PerformanceAlert[]>([]);
@@ -539,7 +529,6 @@ export default function PerformanceMonitorPage() {
   const [signalsLoading, setSignalsLoading] = useState(true);
   const [signalsError, setSignalsError] = useState<string | null>(null);
 
-  const didAttemptCaptureRef = useRef(false);
   const locationRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const hasAutoScrolledRef = useRef(false);
   const hasHydratedFromUrlRef = useRef(false);
@@ -714,73 +703,6 @@ export default function PerformanceMonitorPage() {
     return [...boardLocations].sort((a, b) => b.marginPct - a.marginPct)[0] ?? boardLocations[0];
   }, [boardLocations]);
 
-  const autoCaptureSnapshots = useMemo<PerformanceSignalSnapshot[]>(() => {
-    return normalizePerformanceSnapshots(
-      liveLocations.map((location) => ({
-        locationName: location.name,
-        revenue: location.revenueToday,
-        orders: location.ordersToday,
-        avgTicket: location.aov,
-        laborPct: location.laborPct,
-        marginPct: location.marginPct,
-        refunds: location.refunds ?? null,
-        capturedAt: new Date().toISOString(),
-      }))
-    );
-  }, [liveLocations]);
-
-  useEffect(() => {
-    async function autoCapture() {
-      if (didAttemptCaptureRef.current) return;
-      if (liveLocations.length === 0) return;
-
-      didAttemptCaptureRef.current = true;
-
-      const decision = shouldCapturePerformanceSnapshots({
-        items: autoCaptureSnapshots,
-        minIntervalMs: 30 * 60 * 1000,
-      });
-
-      if (!decision.ok) {
-        setCaptureStatus("skipped");
-        return;
-      }
-
-      const itemsToCapture = decision.items ?? [];
-
-      try {
-        setCaptureStatus("saving");
-
-        const res = await fetch("/api/performance-signals", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: itemsToCapture }),
-        });
-
-        if (!res.ok) {
-          throw new Error("Failed to auto-capture performance snapshots");
-        }
-
-        const hash = buildSnapshotHash(itemsToCapture);
-        markPerformanceSnapshotsCaptured(hash);
-
-        track({
-          ts: Date.now(),
-          type: "performance_snapshot_saved",
-          meta: {
-            locations: itemsToCapture.length,
-          },
-        });
-
-        setCaptureStatus("saved");
-      } catch (error) {
-        console.error("performance auto-capture error:", error);
-        setCaptureStatus("error");
-      }
-    }
-
-    void autoCapture();
-  }, [autoCaptureSnapshots, liveLocations]);
 
   useEffect(() => {
     if (!matchedLocation || hasAutoScrolledRef.current) return;
@@ -821,9 +743,6 @@ export default function PerformanceMonitorPage() {
               </p>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-200">
-                  Auto-capture: KPI memory enabled
-                </span>
 
                 {signalsLoading && (
                   <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
@@ -853,29 +772,6 @@ export default function PerformanceMonitorPage() {
                   Sort: {sortBy}
                 </span>
 
-                {captureStatus === "saving" && (
-                  <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
-                    Saving performance snapshot…
-                  </span>
-                )}
-
-                {captureStatus === "saved" && (
-                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">
-                    Performance snapshot saved
-                  </span>
-                )}
-
-                {captureStatus === "skipped" && (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-                    No new snapshot needed yet
-                  </span>
-                )}
-
-                {captureStatus === "error" && (
-                  <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs text-rose-200">
-                    Snapshot save failed
-                  </span>
-                )}
               </div>
             </div>
 
