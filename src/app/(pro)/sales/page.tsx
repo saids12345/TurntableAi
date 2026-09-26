@@ -716,7 +716,7 @@ export default function PerformanceMonitorPage() {
 
   const autoCaptureSnapshots = useMemo<PerformanceSignalSnapshot[]>(() => {
     return normalizePerformanceSnapshots(
-      boardLocations.map((location) => ({
+      liveLocations.map((location) => ({
         locationName: location.name,
         revenue: location.revenueToday,
         orders: location.ordersToday,
@@ -727,12 +727,12 @@ export default function PerformanceMonitorPage() {
         capturedAt: new Date().toISOString(),
       }))
     );
-  }, [boardLocations]);
+  }, [liveLocations]);
 
   useEffect(() => {
     async function autoCapture() {
       if (didAttemptCaptureRef.current) return;
-      if (boardLocations.length === 0) return;
+      if (liveLocations.length === 0) return;
 
       didAttemptCaptureRef.current = true;
 
@@ -780,7 +780,7 @@ export default function PerformanceMonitorPage() {
     }
 
     void autoCapture();
-  }, [autoCaptureSnapshots, boardLocations]);
+  }, [autoCaptureSnapshots, liveLocations]);
 
   useEffect(() => {
     if (!matchedLocation || hasAutoScrolledRef.current) return;
