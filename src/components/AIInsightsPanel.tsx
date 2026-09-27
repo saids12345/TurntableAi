@@ -410,7 +410,7 @@ export default function AIInsightsPanel() {
   }
 
   async function saveOutcome(insight: InsightItem, actionStatus: ActionStatus) {
-    if (!data?.generatedAt) return;
+    if (!data?.generatedAt || data.signalSource !== "live") return;
 
     const performanceSnapshot = findPerformanceSnapshotForInsight(insight);
     const dedupeKey = dedupeKeyForInsight(
@@ -434,6 +434,7 @@ export default function AIInsightsPanel() {
           href: insight.href,
           cta: insight.cta,
           locationName: performanceSnapshot?.locationName ?? null,
+          signalSource: data.signalSource,
           actionStatus,
         }),
       });
@@ -498,6 +499,7 @@ export default function AIInsightsPanel() {
   const locationsAnalyzed = data?.locationsAnalyzed ?? 0;
   const signalSource = data?.signalSource ?? "fallback";
   const modelSource = data?.source ?? "fallback";
+  const canTrackOutcomes = signalSource === "live";
 
   return (
     <section className="mb-8 rounded-3xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 via-sky-500/5 to-neutral-950 p-6 shadow-xl">
@@ -676,10 +678,16 @@ export default function AIInsightsPanel() {
                     )}
                   </div>
 
+                  {!canTrackOutcomes ? (
+                    <div className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-200">
+                      Outcome tracking is disabled for fallback/demo signals. Connect live restaurant data before recording operator outcomes.
+                    </div>
+                  ) : null}
+
                   <div className="grid gap-2 sm:grid-cols-3">
                     <button
                       type="button"
-                      disabled={isSaving}
+                      disabled={isSaving || !canTrackOutcomes}
                       onClick={() => void saveOutcome(item, "acted")}
                       className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 transition hover:bg-emerald-500/15 disabled:opacity-50"
                     >
@@ -688,7 +696,7 @@ export default function AIInsightsPanel() {
 
                     <button
                       type="button"
-                      disabled={isSaving}
+                      disabled={isSaving || !canTrackOutcomes}
                       onClick={() => void saveOutcome(item, "monitoring")}
                       className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200 transition hover:bg-amber-500/15 disabled:opacity-50"
                     >
@@ -697,7 +705,7 @@ export default function AIInsightsPanel() {
 
                     <button
                       type="button"
-                      disabled={isSaving}
+                      disabled={isSaving || !canTrackOutcomes}
                       onClick={() => void saveOutcome(item, "dismissed")}
                       className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-neutral-300 transition hover:bg-white/10 disabled:opacity-50"
                     >
