@@ -207,8 +207,24 @@ function pctText(value: number | null | undefined) {
   return `${value}%`;
 }
 
-function dedupeKeyForInsight(insight: InsightItem, generatedAt: string | null | undefined) {
-  return `${generatedAt ?? "unknown"}::${insight.type}::${insight.title}`;
+function slugifyInsightKey(input: string) {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function dedupeKeyForInsight(insight: InsightItem, locationName?: string | null) {
+  const locationPart = locationName ? slugifyInsightKey(locationName) : "global";
+
+  return [
+    "insight",
+    insight.type,
+    insight.severity,
+    locationPart,
+    slugifyInsightKey(insight.title).slice(0, 80),
+  ].join(":");
 }
 
 function InsightCardSkeleton() {
@@ -283,8 +299,8 @@ export default function AIInsightsPanel() {
         return;
       }
 
-      const json = (await res.json()) as { items?: OutcomeRow[] };
-      const rows = Array.isArray(json.items) ? json.items : [];
+      const json = (await res.json()) as { rawItems?: OutcomeRow[] };
+      const rows = Array.isArray(json.rawItems) ? json.rawItems : [];
       const mapped = rows.reduce<Record<string, OutcomeRow>>((acc, row) => {
         acc[row.dedupe_key] = row;
         return acc;
@@ -332,10 +348,17 @@ export default function AIInsightsPanel() {
       }
 
       const json = (await res.json()) as CurrentPerformanceResponse;
+
+      if (json.source !== "live") {
+        setPerformanceSignals({});
+        return;
+      }
+
       const mapped = (json.items || []).reduce<Record<string, PerformanceSnapshot>>((acc, row) => {
         if (row.locationName) acc[row.locationName] = row;
         return acc;
       }, {});
+
       setPerformanceSignals(mapped);
     } catch {
       setPerformanceSignals({});
@@ -389,10 +412,11 @@ export default function AIInsightsPanel() {
   async function saveOutcome(insight: InsightItem, actionStatus: ActionStatus) {
     if (!data?.generatedAt) return;
 
-    const dedupeKey = dedupeKeyForInsight(insight, data.generatedAt);
-    const validation = validations[dedupeKey];
     const performanceSnapshot = findPerformanceSnapshotForInsight(insight);
-
+    const dedupeKey = dedupeKeyForInsight(
+      insight,
+      performanceSnapshot?.locationName ?? null
+    );
     try {
       setSavingOutcomeKey(dedupeKey);
 
@@ -400,27 +424,17 @@ export default function AIInsightsPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          dedupeKey,
-          insightTitle: insight.title,
-          insightType: insight.type,
-          insightSeverity: insight.severity,
-          actionStatus,
+          type: insight.type,
+          severity: insight.severity,
+          title: insight.title,
+          summary: insight.summary,
+          reason: insight.reason,
+          recommendedAction: insight.recommendedAction,
+          expectedImpact: insight.expectedImpact,
           href: insight.href,
-          generatedAt: data.generatedAt,
-          insightPayload: insight,
-          signalSnapshot:
-            actionStatus === "acted"
-              ? validation?.beforeSnapshot ?? {
-                  locationName: null,
-                  avgRating: null,
-                  reviewIssueCount: null,
-                  openAlerts: null,
-                  health: null,
-                  topIssue: null,
-                  capturedAt: new Date().toISOString(),
-                }
-              : null,
-          performanceSnapshot: actionStatus === "acted" ? performanceSnapshot : null,
+          cta: insight.cta,
+          locationName: performanceSnapshot?.locationName ?? null,
+          actionStatus,
         }),
       });
 
@@ -583,7 +597,11 @@ export default function AIInsightsPanel() {
       ) : data?.insights?.length ? (
         <div className="grid gap-4 xl:grid-cols-2">
           {data.insights.map((item) => {
-            const dedupeKey = dedupeKeyForInsight(item, data.generatedAt);
+            const performanceSnapshot = findPerformanceSnapshotForInsight(item);
+            const dedupeKey = dedupeKeyForInsight(
+              item,
+              performanceSnapshot?.locationName ?? null
+            );
             const savedOutcome = outcomes[dedupeKey];
             const validation = validations[dedupeKey];
             const isSaving = savingOutcomeKey === dedupeKey;
