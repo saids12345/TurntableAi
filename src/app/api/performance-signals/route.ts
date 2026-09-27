@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
 export const runtime = "nodejs";
@@ -144,57 +144,5 @@ export async function GET() {
       },
       { status: 200 }
     );
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const supabase = await getSupabaseRouteClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = (await req.json()) as Partial<PerformanceSnapshot> | { items?: Partial<PerformanceSnapshot>[] };
-
-    const inputItems = Array.isArray((body as { items?: Partial<PerformanceSnapshot>[] })?.items)
-      ? (body as { items?: Partial<PerformanceSnapshot>[] }).items!
-      : [body as Partial<PerformanceSnapshot>];
-
-    const rows = inputItems
-      .map((item) => ({
-        user_id: user.id,
-        location_name: typeof item.locationName === "string" ? item.locationName.trim() : "",
-        revenue: toNumber(item.revenue),
-        orders: toNumber(item.orders),
-        avg_ticket: toNumber(item.avgTicket),
-        labor_pct: toNumber(item.laborPct),
-        margin_pct: toNumber(item.marginPct),
-        refunds: toNumber(item.refunds),
-        captured_at:
-          typeof item.capturedAt === "string" && item.capturedAt.trim()
-            ? item.capturedAt
-            : new Date().toISOString(),
-      }))
-      .filter((row) => row.location_name);
-
-    if (!rows.length) {
-      return NextResponse.json({ error: "No valid performance rows provided" }, { status: 400 });
-    }
-
-    const { error } = await supabase.from("performance_signal_history").insert(rows);
-
-    if (error) {
-      console.error("performance-signals POST error:", error);
-      return NextResponse.json({ error: "Failed to save performance signals" }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true, inserted: rows.length });
-  } catch (error) {
-    console.error("performance-signals POST unexpected error:", error);
-    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
