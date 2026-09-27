@@ -49,57 +49,6 @@ type ReviewLocationRow = {
   title: string | null;
 };
 
-const FALLBACK_LOCATION_SIGNALS: LocationSignal[] = [
-  {
-    id: "loc_1",
-    name: "Mira Mesa",
-    city: "San Diego",
-    health: "risk",
-    salesDeltaPct: -9,
-    reviewIssueCount: 2,
-    openAlerts: 3,
-    avgRating: 3.9,
-    topIssue: "Lunch traffic weak + wait-time complaints",
-    recommendedAction: "Review lunch promo and manager follow-up",
-  },
-  {
-    id: "loc_2",
-    name: "Chula Vista",
-    city: "San Diego",
-    health: "healthy",
-    salesDeltaPct: 3,
-    reviewIssueCount: 0,
-    openAlerts: 0,
-    avgRating: 4.6,
-    topIssue: null,
-    recommendedAction: "No action needed",
-  },
-  {
-    id: "loc_3",
-    name: "Escondido",
-    city: "San Diego",
-    health: "watch",
-    salesDeltaPct: -4,
-    reviewIssueCount: 3,
-    openAlerts: 2,
-    avgRating: 4.1,
-    topIssue: "Service complaints increasing",
-    recommendedAction: "Review queue and coach shift lead",
-  },
-  {
-    id: "loc_4",
-    name: "La Jolla",
-    city: "San Diego",
-    health: "healthy",
-    salesDeltaPct: 6,
-    reviewIssueCount: 1,
-    openAlerts: 0,
-    avgRating: 4.7,
-    topIssue: null,
-    recommendedAction: "No action needed",
-  },
-];
-
 function safeString(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -514,9 +463,18 @@ export async function GET() {
     }
   }
 
-  const locationSignals =
-    liveSignals.length > 0 ? liveSignals : FALLBACK_LOCATION_SIGNALS;
+  if (liveSignals.length === 0) {
+    return NextResponse.json({
+      generatedAt: new Date().toISOString(),
+      source: "fallback",
+      signalSource: "fallback",
+      userId,
+      insights: [],
+      locationsAnalyzed: 0,
+    });
+  }
 
+  const locationSignals = liveSignals;
   const fallbackInsights = buildFallbackInsights(locationSignals);
 
   if (!process.env.OPENAI_API_KEY) {
