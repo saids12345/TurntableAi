@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
       .from("ai_insight_history")
       .select("id, source, signal_source, locations_analyzed, insight_count, payload, created_at")
       .eq("user_id", user.id)
+      .eq("signal_source", "live")
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -81,6 +82,13 @@ export async function POST(req: NextRequest) {
 
     if (!body || !Array.isArray(body.insights)) {
       return NextResponse.json({ error: "Invalid insight payload" }, { status: 400 });
+    }
+
+    if (body.signalSource !== "live") {
+      return NextResponse.json(
+        { error: "Insight history requires live signal provenance" },
+        { status: 400 }
+      );
     }
 
     const payload: InsightSnapshotPayload = {

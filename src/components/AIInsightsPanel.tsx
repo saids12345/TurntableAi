@@ -366,6 +366,8 @@ export default function AIInsightsPanel() {
   }
 
   async function saveSnapshot(snapshot: AIInsightsResponse) {
+    if (snapshot.signalSource !== "live") return;
+
     const key = JSON.stringify({
       generatedAt: snapshot.generatedAt,
       source: snapshot.source,
