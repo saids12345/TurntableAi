@@ -501,7 +501,43 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await req.json()) as OutcomeBody;
+    const body = (await req.json()) as OutcomeBody & { signalSource?: "live" | "fallback" };
+
+    if (body.signalSource !== "live") {
+      return NextResponse.json(
+        { error: "Outcome tracking requires live signal provenance" },
+        { status: 400 }
+      );
+    }
+
+    const { data: liveSignalRows, error: liveSignalError } = await supabase
+      .from("review_connections")
+      .select("review_locations(id,name,title)")
+      .eq("user_id", user.id)
+      .eq("provider", "google");
+
+    if (liveSignalError) {
+      console.error("ai-insights/outcomes live signal check error:", liveSignalError);
+      return NextResponse.json({ error: "Failed to verify live signal source" }, { status: 500 });
+    }
+
+    const hasLiveSignals = (liveSignalRows || []).some((row: Record<string, unknown>) => {
+      const locations = row.review_locations;
+      if (!Array.isArray(locations)) return false;
+
+      return locations.some((location) => {
+        if (!location || typeof location !== "object" || Array.isArray(location)) return false;
+        const record = location as Record<string, unknown>;
+        return typeof record.id === "string" && typeof record.name === "string";
+      });
+    });
+
+    if (!hasLiveSignals) {
+      return NextResponse.json(
+        { error: "No live restaurant signal source is connected" },
+        { status: 409 }
+      );
+    }
 
     const title = String(body?.title ?? "").trim();
     const summary = String(body?.summary ?? "").trim();
