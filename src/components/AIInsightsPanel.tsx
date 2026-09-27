@@ -809,8 +809,14 @@ export default function AIInsightsPanel() {
             {history.map((item) => {
               const payload = item.payload;
               const firstInsight = payload?.insights?.[0];
+              const historyPerformanceSnapshot = firstInsight
+                ? findPerformanceSnapshotForInsight(firstInsight)
+                : null;
               const historyKey = firstInsight
-                ? dedupeKeyForInsight(firstInsight, payload?.generatedAt)
+                ? dedupeKeyForInsight(
+                    firstInsight,
+                    historyPerformanceSnapshot?.locationName ?? null
+                  )
                 : null;
               const historyOutcome = historyKey ? outcomes[historyKey] : null;
               const historyValidation = historyKey ? validations[historyKey] : null;
