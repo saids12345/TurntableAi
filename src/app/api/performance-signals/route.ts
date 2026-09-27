@@ -15,49 +15,6 @@ type PerformanceSnapshot = {
   capturedAt: string;
 };
 
-const FALLBACK_SNAPSHOTS: PerformanceSnapshot[] = [
-  {
-    locationName: "Mira Mesa",
-    revenue: 3825,
-    orders: 188,
-    avgTicket: 20.35,
-    laborPct: 26,
-    marginPct: 58,
-    refunds: 72,
-    capturedAt: new Date().toISOString(),
-  },
-  {
-    locationName: "Chula Vista",
-    revenue: 4410,
-    orders: 219,
-    avgTicket: 20.14,
-    laborPct: 19,
-    marginPct: 64,
-    refunds: 18,
-    capturedAt: new Date().toISOString(),
-  },
-  {
-    locationName: "Escondido",
-    revenue: 3990,
-    orders: 201,
-    avgTicket: 19.85,
-    laborPct: 22,
-    marginPct: 61,
-    refunds: 36,
-    capturedAt: new Date().toISOString(),
-  },
-  {
-    locationName: "La Jolla",
-    revenue: 5120,
-    orders: 246,
-    avgTicket: 20.81,
-    laborPct: 18,
-    marginPct: 67,
-    refunds: 12,
-    capturedAt: new Date().toISOString(),
-  },
-];
-
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -78,7 +35,7 @@ export async function GET() {
       return NextResponse.json(
         {
           source: "fallback",
-          items: FALLBACK_SNAPSHOTS,
+          items: [],
         },
         { status: 200 }
       );
@@ -97,7 +54,7 @@ export async function GET() {
       return NextResponse.json(
         {
           source: "fallback",
-          items: FALLBACK_SNAPSHOTS,
+          items: [],
         },
         { status: 200 }
       );
@@ -107,7 +64,7 @@ export async function GET() {
       return NextResponse.json(
         {
           source: "fallback",
-          items: FALLBACK_SNAPSHOTS,
+          items: [],
         },
         { status: 200 }
       );
@@ -140,7 +97,7 @@ export async function GET() {
     return NextResponse.json(
       {
         source: "fallback",
-        items: FALLBACK_SNAPSHOTS,
+        items: [],
       },
       { status: 200 }
     );
