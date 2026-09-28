@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
 export const runtime = "nodejs";
@@ -417,6 +418,7 @@ async function getCurrentPerformanceSignals(
       "location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
     )
     .eq("user_id", userId)
+    .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
     .order("captured_at", { ascending: false });
 
   if (error) throw error;

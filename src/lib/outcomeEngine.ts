@@ -1,3 +1,4 @@
+import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import {
   verifyDecisionOutcome,
@@ -491,6 +492,7 @@ async function loadPerformanceSignals(params: {
     .from("performance_signal_history")
     .select("id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
     .eq("user_id", userId)
+    .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
     .order("captured_at", { ascending: true });
 
   if (locationName) query = query.eq("location_name", locationName);

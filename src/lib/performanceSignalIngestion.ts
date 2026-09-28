@@ -2,14 +2,8 @@ import "server-only";
 
 import { z } from "zod";
 
+import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-
-const TRUSTED_PERFORMANCE_SOURCES = [
-  "toast",
-  "square",
-  "clover",
-  "lightspeed",
-] as const;
 
 const performanceSignalSchema = z
   .object({

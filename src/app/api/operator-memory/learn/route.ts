@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
 export const runtime = "nodejs";
@@ -329,6 +330,7 @@ async function loadPerformanceWindow(params: {
     .from("performance_signal_history")
     .select("id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
     .eq("user_id", userId)
+    .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
     .gte("captured_at", beforeIso)
     .lte("captured_at", afterIso)
     .order("captured_at", { ascending: true });
