@@ -49,6 +49,9 @@ type SignalSnapshot = {
 
 type PerformanceSnapshot = {
   locationName: string | null;
+  sourceSystem: string;
+  sourceRecordId: string;
+  ingestedAt: string;
   revenue: number | null;
   orders: number | null;
   avgTicket: number | null;
@@ -73,6 +76,9 @@ type LocationSignal = {
 
 type CurrentPerformance = {
   locationName: string;
+  sourceSystem: string;
+  sourceRecordId: string;
+  ingestedAt: string;
   revenue: number | null;
   orders: number | null;
   avgTicket: number | null;
@@ -400,7 +406,7 @@ async function getCurrentPerformanceSignals(userId: string): Promise<CurrentPerf
   const { data, error } = await supabase
     .from("performance_signal_history")
     .select(
-      "location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
+      "location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
     )
     .eq("user_id", userId)
     .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
@@ -416,6 +422,9 @@ async function getCurrentPerformanceSignals(userId: string): Promise<CurrentPerf
 
     latestByLocation.set(locationName, {
       locationName,
+      sourceSystem: String(row.source_system),
+      sourceRecordId: String(row.source_record_id),
+      ingestedAt: String(row.ingested_at),
       revenue: numOrNull(row.revenue),
       orders: numOrNull(row.orders),
       avgTicket: numOrNull(row.avg_ticket),
@@ -518,6 +527,9 @@ function buildRevenueInsight(
     signalSnapshot: null,
     performanceSnapshot: {
       locationName: performance.locationName,
+      sourceSystem: performance.sourceSystem,
+      sourceRecordId: performance.sourceRecordId,
+      ingestedAt: performance.ingestedAt,
       revenue: performance.revenue,
       orders: performance.orders,
       avgTicket: performance.avgTicket,
@@ -611,6 +623,9 @@ function buildGrowthInsight(performance: CurrentPerformance): GeneratedInsight {
     signalSnapshot: null,
     performanceSnapshot: {
       locationName: performance.locationName,
+      sourceSystem: performance.sourceSystem,
+      sourceRecordId: performance.sourceRecordId,
+      ingestedAt: performance.ingestedAt,
       revenue: performance.revenue,
       orders: performance.orders,
       avgTicket: performance.avgTicket,
@@ -661,6 +676,9 @@ async function enrichSnapshots(
         (matchedPerformance
           ? {
               locationName: matchedPerformance.locationName,
+              sourceSystem: matchedPerformance.sourceSystem,
+              sourceRecordId: matchedPerformance.sourceRecordId,
+              ingestedAt: matchedPerformance.ingestedAt,
               revenue: matchedPerformance.revenue,
               orders: matchedPerformance.orders,
               avgTicket: matchedPerformance.avgTicket,

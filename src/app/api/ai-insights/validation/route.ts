@@ -36,6 +36,9 @@ type SignalSnapshot = {
 
 type PerformanceSnapshot = {
   locationName: string | null;
+  sourceSystem?: string | null;
+  sourceRecordId?: string | null;
+  ingestedAt?: string | null;
   revenue: number | null;
   orders: number | null;
   avgTicket: number | null;
@@ -92,6 +95,9 @@ type LocationSignal = {
 
 type CurrentPerformance = {
   locationName: string;
+  sourceSystem: string;
+  sourceRecordId: string;
+  ingestedAt: string;
   revenue: number | null;
   orders: number | null;
   avgTicket: number | null;
@@ -415,7 +421,7 @@ async function getCurrentPerformanceSignals(
   const { data, error } = await supabase
     .from("performance_signal_history")
     .select(
-      "location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
+      "location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
     )
     .eq("user_id", userId)
     .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
@@ -431,6 +437,9 @@ async function getCurrentPerformanceSignals(
 
     latestByLocation.set(locationName, {
       locationName,
+      sourceSystem: String(row.source_system),
+      sourceRecordId: String(row.source_record_id),
+      ingestedAt: String(row.ingested_at),
       revenue: numOrNull(row.revenue),
       orders: numOrNull(row.orders),
       avgTicket: numOrNull(row.avg_ticket),

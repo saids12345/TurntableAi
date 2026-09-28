@@ -49,6 +49,9 @@ type SignalSnapshot = {
 
 type PerformanceSnapshot = {
   locationName: string | null;
+  sourceSystem: string;
+  sourceRecordId: string;
+  ingestedAt: string;
   revenue: number | null;
   orders: number | null;
   avgTicket: number | null;
@@ -429,7 +432,7 @@ async function getPerformanceSnapshotForLocation(
   const { data, error } = await supabase
     .from("performance_signal_history")
     .select(
-      "location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
+      "location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
     )
     .eq("user_id", userId)
     .eq("location_name", locationName)
@@ -443,6 +446,9 @@ async function getPerformanceSnapshotForLocation(
 
   return {
     locationName: String(data.location_name),
+    sourceSystem: String(data.source_system),
+    sourceRecordId: String(data.source_record_id),
+    ingestedAt: String(data.ingested_at),
     revenue: numOrNull(data.revenue),
     orders: numOrNull(data.orders),
     avgTicket: numOrNull(data.avg_ticket),
