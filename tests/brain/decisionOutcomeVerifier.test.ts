@@ -64,6 +64,9 @@ function makeEvaluation(params: {
       "2026-09-06T18:00:00.000Z",
 
     baseline: {
+      sourceSystem: "toast",
+      sourceRecordId: "baseline-test-1",
+      ingestedAt: "2026-09-05T18:05:00.000Z",
       revenue: 1000,
       orders: 100,
       avgTicket: 10,
@@ -77,6 +80,9 @@ function makeEvaluation(params: {
     },
 
     current: {
+      sourceSystem: "toast",
+      sourceRecordId: "current-test-1",
+      ingestedAt: "2026-09-06T18:05:00.000Z",
       revenue: 1080,
       orders: 105,
       avgTicket: 10.3,
@@ -674,6 +680,9 @@ const observationRows = [
   {
     id: "before-valid",
     location_name: "Chula Vista",
+    source_system: "toast",
+    source_record_id: "before-valid",
+    ingested_at: "2026-09-05T11:05:00.000Z",
     revenue: 1000,
     orders: 100,
     avg_ticket: 10,
@@ -687,6 +696,9 @@ const observationRows = [
   {
     id: "too-early-after",
     location_name: "Chula Vista",
+    source_system: "toast",
+    source_record_id: "too-early-after",
+    ingested_at: "2026-09-05T13:05:00.000Z",
     revenue: 1040,
     orders: 102,
     avg_ticket: 10.2,
@@ -700,6 +712,9 @@ const observationRows = [
   {
     id: "mature-after",
     location_name: "Chula Vista",
+    source_system: "toast",
+    source_record_id: "mature-after",
+    ingested_at: "2026-09-06T13:05:00.000Z",
     revenue: 1100,
     orders: 108,
     avg_ticket: 10.4,
@@ -721,6 +736,10 @@ assert.equal(
   trueBaseline?.id,
   "before-valid",
 );
+
+assert.equal(trueBaseline?.source_system, "toast");
+assert.equal(trueBaseline?.source_record_id, "before-valid");
+assert.equal(trueBaseline?.ingested_at, "2026-09-05T11:05:00.000Z");
 
 /**
  * A post-execution row must never become
@@ -758,6 +777,10 @@ assert.equal(
   matureSnapshot?.id,
   "mature-after",
 );
+
+assert.equal(matureSnapshot?.source_system, "toast");
+assert.equal(matureSnapshot?.source_record_id, "mature-after");
+assert.equal(matureSnapshot?.ingested_at, "2026-09-06T13:05:00.000Z");
 
 assert.notEqual(
   matureSnapshot?.id,

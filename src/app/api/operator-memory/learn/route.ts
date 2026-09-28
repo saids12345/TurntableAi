@@ -27,6 +27,9 @@ type AutoActionRow = {
 type PerformanceSignalRow = {
   id: string;
   location_name: string | null;
+  source_system: string;
+  source_record_id: string;
+  ingested_at: string;
   revenue: number | string | null;
   orders: number | string | null;
   avg_ticket: number | string | null;
@@ -34,6 +37,14 @@ type PerformanceSignalRow = {
   margin_pct: number | string | null;
   refunds: number | string | null;
   captured_at: string | null;
+};
+
+type PerformanceProvenance = {
+  rowId: string;
+  sourceSystem: string;
+  sourceRecordId: string;
+  ingestedAt: string;
+  capturedAt: string | null;
 };
 
 type ReviewRow = {
@@ -63,6 +74,8 @@ type LearningResult = {
   ratingAfter: number | null;
   refundsBefore: number | null;
   refundsAfter: number | null;
+  performanceBeforeProvenance: PerformanceProvenance | null;
+  performanceAfterProvenance: PerformanceProvenance | null;
   savedMemoryId?: string;
 };
 
@@ -328,7 +341,7 @@ async function loadPerformanceWindow(params: {
 
   const { data, error } = await supabase
     .from("performance_signal_history")
-    .select("id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
+    .select("id, location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
     .eq("user_id", userId)
     .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
     .gte("captured_at", beforeIso)
@@ -504,6 +517,12 @@ measuredActionType:
 
       refundsAfter:
         result.refundsAfter,
+
+      performanceBeforeProvenance:
+        result.performanceBeforeProvenance,
+
+      performanceAfterProvenance:
+        result.performanceAfterProvenance,
 
       reuseRecommended:
         result.reuseRecommended,
@@ -1108,6 +1127,24 @@ async function learnFromAction(params: {
     ratingAfter,
     refundsBefore,
     refundsAfter,
+    performanceBeforeProvenance: performanceWindow.before
+      ? {
+          rowId: performanceWindow.before.id,
+          sourceSystem: performanceWindow.before.source_system,
+          sourceRecordId: performanceWindow.before.source_record_id,
+          ingestedAt: performanceWindow.before.ingested_at,
+          capturedAt: performanceWindow.before.captured_at,
+        }
+      : null,
+    performanceAfterProvenance: performanceWindow.after
+      ? {
+          rowId: performanceWindow.after.id,
+          sourceSystem: performanceWindow.after.source_system,
+          sourceRecordId: performanceWindow.after.source_record_id,
+          ingestedAt: performanceWindow.after.ingested_at,
+          capturedAt: performanceWindow.after.captured_at,
+        }
+      : null,
   };
 
   const saved = await saveLearningResult({ supabase, userId, result });

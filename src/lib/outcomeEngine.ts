@@ -9,6 +9,9 @@ export type LessonStrength = "weak" | "developing" | "strong";
 export type MemoryConfidence = "low" | "medium" | "high";
 
 export type OutcomeMetricSnapshot = {
+  sourceSystem: string | null;
+  sourceRecordId: string | null;
+  ingestedAt: string | null;
   revenue: number | null;
   orders: number | null;
   avgTicket: number | null;
@@ -112,6 +115,9 @@ type OperatorMemoryRow = {
 type PerformanceSignalRow = {
   id: string;
   location_name: string | null;
+  source_system: string;
+  source_record_id: string;
+  ingested_at: string;
   revenue: number | null;
   orders: number | null;
   avg_ticket: number | null;
@@ -245,6 +251,9 @@ function inferActionTitle(action: AutoActionRow | OperatorMemoryRow) {
 
 function buildEmptySnapshot(): OutcomeMetricSnapshot {
   return {
+    sourceSystem: null,
+    sourceRecordId: null,
+    ingestedAt: null,
     revenue: null,
     orders: null,
     avgTicket: null,
@@ -259,6 +268,9 @@ function buildEmptySnapshot(): OutcomeMetricSnapshot {
 
 function buildPerformanceSnapshot(row: PerformanceSignalRow | null): OutcomeMetricSnapshot {
   return {
+    sourceSystem: row?.source_system ?? null,
+    sourceRecordId: row?.source_record_id ?? null,
+    ingestedAt: row?.ingested_at ?? null,
     revenue: asNumber(row?.revenue),
     orders: asNumber(row?.orders),
     avgTicket: asNumber(row?.avg_ticket),
@@ -490,7 +502,7 @@ async function loadPerformanceSignals(params: {
 
   let query = supabase
     .from("performance_signal_history")
-    .select("id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
+    .select("id, location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
     .eq("user_id", userId)
     .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
     .order("captured_at", { ascending: true });
