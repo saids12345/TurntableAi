@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { runAIKernel } from "@/lib/aiKernel";
 import {
@@ -1137,6 +1138,7 @@ const forceSupersedeFailure =
         "id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
       )
       .eq("user_id", user.id)
+      .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
       .order("captured_at", { ascending: false });
 
     if (performanceError) {

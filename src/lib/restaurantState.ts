@@ -1,3 +1,4 @@
+import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
 export type RestaurantStateLevel = "excellent" | "healthy" | "watch" | "risk" | "critical";
@@ -422,6 +423,7 @@ export async function getRestaurantStates(params: {
       .from("performance_signal_history")
       .select("id, user_id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
       .eq("user_id", userId)
+      .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
       .gte("captured_at", sinceIso)
       .order("captured_at", { ascending: false }),
     [],

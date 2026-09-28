@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
 export const runtime = "nodejs";
@@ -432,6 +433,7 @@ async function getPerformanceSnapshotForLocation(
     )
     .eq("user_id", userId)
     .eq("location_name", locationName)
+    .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
     .order("captured_at", { ascending: false })
     .limit(1)
     .maybeSingle();
