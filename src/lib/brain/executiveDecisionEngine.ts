@@ -3,6 +3,7 @@ import {
   isMemoryEligibleAsReusablePlaybook,
   isMemoryTrustedForReasoning,
 } from "@/lib/operatorMemoryTrust";
+import type { PerformanceProvenance } from "@/lib/restaurantState";
 import {
   reviewExecutiveDecision,
   type DecisionCandidate,
@@ -27,6 +28,11 @@ export type DecisionSource =
 
 export type EvidenceStrength = "weak" | "moderate" | "strong";
 
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
+
 export interface ExecutiveDecisionEvidence {
   id: string;
   source: DecisionSource;
@@ -34,6 +40,7 @@ export interface ExecutiveDecisionEvidence {
   strength: EvidenceStrength;
   confidence: number;
   locationName?: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
 }
 
 export interface ExecutiveDecisionAlternative {
@@ -58,6 +65,7 @@ export interface ExecutiveDecisionAction {
   executionMode: string;
   executionWindow: string;
   locationName?: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
   successMetric: string;
   checklist: string[];
 }
@@ -127,6 +135,7 @@ export interface ExecutiveDecisionPlanningMove {
   executionWindow?: string;
   checklist?: string[];
   successMetric?: string;
+  performanceProvenance?: PerformanceProvenancePair | null;
 }
 
 export interface ExecutiveDecisionPlanning {
@@ -150,6 +159,7 @@ export interface ExecutiveDecisionCausalHypothesis {
   affectedMetrics?: string[];
   recommendedActions?: string[];
   whatWouldChangeMyMind?: string[];
+  performanceProvenance?: PerformanceProvenancePair | null;
 }
 
 export interface ExecutiveDecisionCausalAnalysis {
@@ -177,6 +187,7 @@ export interface ExecutiveDecisionPrediction {
     marginChangePct?: number | null;
     laborChangePct?: number | null;
   };
+  performanceProvenance?: PerformanceProvenancePair | null;
 }
 
 export interface ExecutiveDecisionPredictionAnalysis {
@@ -203,6 +214,7 @@ export interface ExecutiveDecisionWorldModel {
   topSignal?: {
     signal?: ExecutiveDecisionWorldSignal;
     locationName?: string | null;
+    performanceProvenance?: PerformanceProvenancePair | null;
   } | null;
   assumptions?: string[];
   locationModels?: Array<{
@@ -633,6 +645,7 @@ function buildEvidence(
       strength: evidenceStrength(causalConfidence),
       confidence: causalConfidence,
       locationName: causal?.locationName,
+      performanceProvenance: causal?.performanceProvenance ?? null,
     });
   }
 
@@ -652,6 +665,7 @@ function buildEvidence(
       strength: evidenceStrength(confidence),
       confidence,
       locationName: prediction?.locationName,
+      performanceProvenance: prediction?.performanceProvenance ?? null,
     });
   }
 
@@ -672,6 +686,8 @@ function buildEvidence(
       confidence,
       locationName:
         input.worldModel?.topSignal?.locationName ?? null,
+      performanceProvenance:
+        input.worldModel?.topSignal?.performanceProvenance ?? null,
     });
   }
 
@@ -685,6 +701,7 @@ function buildEvidence(
       strength: evidenceStrength(confidence),
       confidence,
       locationName: planning.locationName,
+      performanceProvenance: planning.performanceProvenance ?? null,
     });
   }
 
@@ -697,6 +714,7 @@ function buildEvidence(
       statement: execution.description,
       strength: evidenceStrength(confidence),
       confidence,
+      performanceProvenance: null,
     });
   }
 
@@ -736,6 +754,7 @@ function buildEvidence(
       strength: evidenceStrength(confidence),
       confidence,
       locationName: memory.location_name,
+      performanceProvenance: null,
     });
   }
 
@@ -855,6 +874,12 @@ function buildRecommendedAction(
       normalizeText(planningMove?.executionWindow) ??
       "Within the next 24 hours",
     locationName,
+    performanceProvenance:
+      planningMove?.performanceProvenance ??
+      input.causalAnalysis?.topHypothesis?.performanceProvenance ??
+      input.prediction?.topPrediction?.performanceProvenance ??
+      input.worldModel?.topSignal?.performanceProvenance ??
+      null,
     successMetric:
       normalizeText(planningMove?.successMetric) ??
       "Confirm measurable improvement in the affected operating metric.",
