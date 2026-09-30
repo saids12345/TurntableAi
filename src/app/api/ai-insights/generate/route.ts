@@ -49,6 +49,7 @@ type SignalSnapshot = {
 
 type PerformanceSnapshot = {
   locationName: string | null;
+  rowId: string;
   sourceSystem: string;
   sourceRecordId: string;
   ingestedAt: string;
@@ -76,6 +77,7 @@ type LocationSignal = {
 
 type CurrentPerformance = {
   locationName: string;
+  rowId: string;
   sourceSystem: string;
   sourceRecordId: string;
   ingestedAt: string;
@@ -406,7 +408,7 @@ async function getCurrentPerformanceSignals(userId: string): Promise<CurrentPerf
   const { data, error } = await supabase
     .from("performance_signal_history")
     .select(
-      "location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
+      "id, location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
     )
     .eq("user_id", userId)
     .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
@@ -422,6 +424,7 @@ async function getCurrentPerformanceSignals(userId: string): Promise<CurrentPerf
 
     latestByLocation.set(locationName, {
       locationName,
+      rowId: String(row.id),
       sourceSystem: String(row.source_system),
       sourceRecordId: String(row.source_record_id),
       ingestedAt: String(row.ingested_at),
@@ -527,6 +530,7 @@ function buildRevenueInsight(
     signalSnapshot: null,
     performanceSnapshot: {
       locationName: performance.locationName,
+      rowId: performance.rowId,
       sourceSystem: performance.sourceSystem,
       sourceRecordId: performance.sourceRecordId,
       ingestedAt: performance.ingestedAt,
@@ -623,6 +627,7 @@ function buildGrowthInsight(performance: CurrentPerformance): GeneratedInsight {
     signalSnapshot: null,
     performanceSnapshot: {
       locationName: performance.locationName,
+      rowId: performance.rowId,
       sourceSystem: performance.sourceSystem,
       sourceRecordId: performance.sourceRecordId,
       ingestedAt: performance.ingestedAt,
@@ -676,6 +681,7 @@ async function enrichSnapshots(
         (matchedPerformance
           ? {
               locationName: matchedPerformance.locationName,
+              rowId: matchedPerformance.rowId,
               sourceSystem: matchedPerformance.sourceSystem,
               sourceRecordId: matchedPerformance.sourceRecordId,
               ingestedAt: matchedPerformance.ingestedAt,
