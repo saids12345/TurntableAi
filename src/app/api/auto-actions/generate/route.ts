@@ -961,7 +961,10 @@ function buildAutoAction(
       version: "v3",
       generatedFrom: {
         reviewWindowDays: 45,
-        performanceSnapshotsUsed: 2,
+        performanceSnapshotsUsed: [
+          location.latestPerformanceProvenance,
+          location.previousPerformanceProvenance,
+        ].filter(Boolean).length,
       },
       performanceProvenance: {
         latest: location.latestPerformanceProvenance,
