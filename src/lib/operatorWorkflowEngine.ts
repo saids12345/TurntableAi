@@ -682,8 +682,9 @@ function buildTaskForStep(params: {
   confidence: number;
   estimatedImpact: number;
   locationName: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
 }) {
-  return buildOperatorTask({
+  const task = buildOperatorTask({
     executionPlan: {
       topTask: {
         title: params.stepTitle,
@@ -703,6 +704,14 @@ function buildTaskForStep(params: {
       riskLevel: params.priority,
     },
   });
+
+  return {
+    ...task,
+    metadata: {
+      ...(task.metadata ?? {}),
+      performanceProvenance: params.performanceProvenance,
+    },
+  };
 }
 
 function createWorkflowStep(params: {
@@ -716,6 +725,7 @@ function createWorkflowStep(params: {
   confidence: number;
   estimatedImpact: number;
   locationName: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
   successMetric?: string | null;
 phase?: string | null;
 metadata?: Record<string, unknown>;
@@ -732,6 +742,7 @@ safetyContract?: WorkflowStepSafetyContract;
     confidence: params.confidence,
     estimatedImpact: params.estimatedImpact,
     locationName: params.locationName,
+    performanceProvenance: params.performanceProvenance,
   });
 
   return {
@@ -2265,6 +2276,10 @@ function buildCognitiveOperatorWorkflow(
 
         locationName,
 
+        performanceProvenance:
+          input.operatorIntelligence?.performanceProvenance ??
+          null,
+
         successMetric:
   template.successMetric,
             safetyContract:
@@ -2589,6 +2604,9 @@ export function buildOperatorWorkflow(
     confidence,
     estimatedImpact,
     locationName,
+    performanceProvenance:
+      intelligence?.performanceProvenance ??
+      null,
     successMetric:
       "The responsible operator confirms that the signal and root cause are accurate.",
     metadata: {
@@ -2611,6 +2629,9 @@ export function buildOperatorWorkflow(
     confidence,
     estimatedImpact,
     locationName,
+    performanceProvenance:
+      intelligence?.performanceProvenance ??
+      null,
     successMetric,
     metadata: {
       phase: "execute",
@@ -2641,6 +2662,9 @@ export function buildOperatorWorkflow(
           estimatedImpact - 10,
         ),
         locationName,
+        performanceProvenance:
+          intelligence?.performanceProvenance ??
+          null,
         successMetric,
         metadata: {
           phase: "support",
@@ -2667,6 +2691,9 @@ export function buildOperatorWorkflow(
     confidence,
     estimatedImpact,
     locationName,
+    performanceProvenance:
+      intelligence?.performanceProvenance ??
+      null,
     successMetric,
     metadata: {
       phase: "measure",
@@ -2686,6 +2713,9 @@ export function buildOperatorWorkflow(
     confidence,
     estimatedImpact,
     locationName,
+    performanceProvenance:
+      intelligence?.performanceProvenance ??
+      null,
     successMetric:
       "A measured lesson or reusable playbook is stored in Operator Memory.",
     metadata: {
