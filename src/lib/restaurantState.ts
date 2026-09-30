@@ -14,6 +14,14 @@ export type RestaurantStateDimension =
 
 export type RestaurantStateScores = Record<RestaurantStateDimension, number>;
 
+export type PerformanceProvenance = {
+  rowId: string;
+  sourceSystem: string;
+  sourceRecordId: string;
+  ingestedAt: string;
+  capturedAt: string | null;
+};
+
 export type RestaurantStateMetricSnapshot = {
   revenue: number | null;
   previousRevenue: number | null;
@@ -33,6 +41,8 @@ export type RestaurantStateMetricSnapshot = {
   memoryLessons: number;
   reusableLessons: number;
   avgOutcomeScore: number | null;
+  latestPerformanceProvenance: PerformanceProvenance | null;
+  previousPerformanceProvenance: PerformanceProvenance | null;
   capturedAt: string | null;
 };
 
@@ -54,6 +64,9 @@ type PerformanceSignalRow = {
   id: string;
   user_id?: string | null;
   location_name: string | null;
+  source_system: string;
+  source_record_id: string;
+  ingested_at: string;
   revenue: number | null;
   orders: number | null;
   avg_ticket: number | null;
@@ -373,6 +386,24 @@ function buildMetrics(params: {
     avgOutcomeScore: outcomeScores.length
       ? round(outcomeScores.reduce((sum, value) => sum + value, 0) / outcomeScores.length, 1)
       : null,
+    latestPerformanceProvenance: latest
+      ? {
+          rowId: latest.id,
+          sourceSystem: latest.source_system,
+          sourceRecordId: latest.source_record_id,
+          ingestedAt: latest.ingested_at,
+          capturedAt: latest.captured_at,
+        }
+      : null,
+    previousPerformanceProvenance: previous
+      ? {
+          rowId: previous.id,
+          sourceSystem: previous.source_system,
+          sourceRecordId: previous.source_record_id,
+          ingestedAt: previous.ingested_at,
+          capturedAt: previous.captured_at,
+        }
+      : null,
     capturedAt: latest?.captured_at ?? null,
   };
 }
@@ -421,7 +452,7 @@ export async function getRestaurantStates(params: {
   const performanceRows = await safeSelect<PerformanceSignalRow>(
     supabase
       .from("performance_signal_history")
-      .select("id, user_id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
+      .select("id, user_id, location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at")
       .eq("user_id", userId)
       .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
       .gte("captured_at", sinceIso)
@@ -503,6 +534,8 @@ export async function getRestaurantState(params: {
     memoryLessons: 0,
     reusableLessons: 0,
     avgOutcomeScore: null,
+    latestPerformanceProvenance: null,
+    previousPerformanceProvenance: null,
     capturedAt: null,
   });
 }
