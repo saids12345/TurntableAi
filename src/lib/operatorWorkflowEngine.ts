@@ -5,6 +5,7 @@ import {
   type OperatorTaskPriority,
   type OperatorTaskStatus,
 } from "@/lib/operatorTaskEngine";
+import type { PerformanceProvenance } from "@/lib/restaurantState";
 
 export type OperatorWorkflowStatus =
   | "draft"
@@ -49,6 +50,11 @@ export type WorkflowExecutionMode =
   | "approval_required"
   | "manual"
   | "monitor";
+
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
 
 export type WorkflowStep = {
   id: string;
@@ -171,6 +177,7 @@ export type OperatorWorkflow = {
     executiveRecommendation: string | null;
     executionPlanSummary: string | null;
     riskLevel: string | null;
+    performanceProvenance?: PerformanceProvenancePair | null;
   };
 
   createdAt: string;
@@ -385,6 +392,7 @@ export type BuildWorkflowInput = {
     watchNext?: string[];
     successMetric?: string | null;
     locationFocus?: string | null;
+    performanceProvenance?: PerformanceProvenancePair | null;
   } | null;
 
   executionPlan?: {
@@ -2391,6 +2399,11 @@ metadata: {
         String(
           riskLevel,
         ),
+
+      performanceProvenance:
+        input.operatorIntelligence
+          ?.performanceProvenance ??
+        null,
     },
 
     createdAt:
@@ -2769,6 +2782,10 @@ export function buildOperatorWorkflow(
       riskLevel:
         executiveAI?.riskLevel ??
         intelligence?.riskLevel ??
+        null,
+
+      performanceProvenance:
+        intelligence?.performanceProvenance ??
         null,
     },
 
