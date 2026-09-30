@@ -64,6 +64,7 @@ function makeEvaluation(params: {
       "2026-09-06T18:00:00.000Z",
 
     baseline: {
+      rowId: "baseline-row-test-1",
       sourceSystem: "toast",
       sourceRecordId: "baseline-test-1",
       ingestedAt: "2026-09-05T18:05:00.000Z",
@@ -80,6 +81,7 @@ function makeEvaluation(params: {
     },
 
     current: {
+      rowId: "current-row-test-1",
       sourceSystem: "toast",
       sourceRecordId: "current-test-1",
       ingestedAt: "2026-09-06T18:05:00.000Z",

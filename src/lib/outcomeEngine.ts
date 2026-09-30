@@ -9,6 +9,7 @@ export type LessonStrength = "weak" | "developing" | "strong";
 export type MemoryConfidence = "low" | "medium" | "high";
 
 export type OutcomeMetricSnapshot = {
+  rowId: string | null;
   sourceSystem: string | null;
   sourceRecordId: string | null;
   ingestedAt: string | null;
@@ -251,6 +252,7 @@ function inferActionTitle(action: AutoActionRow | OperatorMemoryRow) {
 
 function buildEmptySnapshot(): OutcomeMetricSnapshot {
   return {
+    rowId: null,
     sourceSystem: null,
     sourceRecordId: null,
     ingestedAt: null,
@@ -268,6 +270,7 @@ function buildEmptySnapshot(): OutcomeMetricSnapshot {
 
 function buildPerformanceSnapshot(row: PerformanceSignalRow | null): OutcomeMetricSnapshot {
   return {
+    rowId: row?.id ?? null,
     sourceSystem: row?.source_system ?? null,
     sourceRecordId: row?.source_record_id ?? null,
     ingestedAt: row?.ingested_at ?? null,
