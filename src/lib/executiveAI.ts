@@ -1,8 +1,14 @@
+import type { PerformanceProvenance } from "@/lib/restaurantState";
 import {
   getBestHistoricalMatch,
   type SimilarityContext,
   type SimilarityResult,
 } from "./similarityEngine";
+
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
 
 export type ExecutiveRiskLevel = "low" | "medium" | "high" | "critical";
 export type ExecutiveDecisionMode = "single_location" | "network";
@@ -17,6 +23,7 @@ export type ExecutiveMove = {
   executionWindow?: string;
   successMetric?: string;
   locationName?: string | null;
+  performanceProvenance?: PerformanceProvenancePair | null;
 };
 
 export type ExecutiveCause = {
@@ -29,6 +36,7 @@ export type ExecutiveCause = {
   recommendedActions?: string[];
   whatWouldChangeMyMind?: string[];
   locationName?: string | null;
+  performanceProvenance?: PerformanceProvenancePair | null;
 };
 
 export type ExecutivePrediction = {
@@ -40,6 +48,7 @@ export type ExecutivePrediction = {
   ifIgnored?: string[];
   bestIntervention?: string[];
   locationName?: string | null;
+  performanceProvenance?: PerformanceProvenancePair | null;
 };
 
 export type ExecutiveWorldSignal = {
@@ -51,6 +60,7 @@ export type ExecutiveWorldSignal = {
   operatorImplication?: string;
   recommendedAdjustment?: string;
   locationName?: string | null;
+  performanceProvenance?: PerformanceProvenancePair | null;
 };
 
 export type ExecutiveAIInput = {
@@ -100,6 +110,8 @@ export type ExecutiveAIResult = {
    */
   historicalMatch: SimilarityResult | null;
   historicalExperienceUsed: boolean;
+
+  performanceProvenance: PerformanceProvenancePair | null;
 
   generatedAt: string;
 };
@@ -236,6 +248,13 @@ export function buildExecutiveAI(
   const topCause = input.topCause ?? null;
   const topPrediction = input.topPrediction ?? null;
   const topWorldSignal = input.topWorldSignal ?? null;
+
+  const performanceProvenance =
+    topMove?.performanceProvenance ??
+    topCause?.performanceProvenance ??
+    topPrediction?.performanceProvenance ??
+    topWorldSignal?.performanceProvenance ??
+    null;
 
   const riskLevel = normalizeRisk(
     topPrediction?.riskLevel,
@@ -403,6 +422,8 @@ export function buildExecutiveAI(
 
     historicalMatch,
     historicalExperienceUsed,
+
+    performanceProvenance,
 
     generatedAt: new Date().toISOString(),
   };
