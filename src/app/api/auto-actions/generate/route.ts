@@ -31,6 +31,14 @@ type ActionType =
   | "margin_protection"
   | "traffic_reactivation";
 
+type PerformanceProvenance = {
+  rowId: string;
+  sourceSystem: string;
+  sourceRecordId: string;
+  ingestedAt: string;
+  capturedAt: string;
+};
+
 type CommandCenterLocation = {
   id: string;
   name: string;
@@ -51,6 +59,8 @@ type CommandCenterLocation = {
   latestLaborPct: number | null;
   latestMarginPct: number | null;
   latestRefunds: number | null;
+  latestPerformanceProvenance: PerformanceProvenance | null;
+  previousPerformanceProvenance: PerformanceProvenance | null;
   negativeReviewExamples: string[];
 };
 
@@ -109,6 +119,9 @@ type ReviewLocationRow = {
 type PerformanceSignalRow = {
   id: string;
   location_name: string;
+  source_system: string;
+  source_record_id: string;
+  ingested_at: string;
   revenue: number | null;
   orders: number | null;
   avg_ticket: number | null;
@@ -950,6 +963,10 @@ function buildAutoAction(
         reviewWindowDays: 45,
         performanceSnapshotsUsed: 2,
       },
+      performanceProvenance: {
+        latest: location.latestPerformanceProvenance,
+        previous: location.previousPerformanceProvenance,
+      },
       trigger: decision.trigger,
       health: location.health,
       salesDeltaPct: location.salesDeltaPct,
@@ -1135,7 +1152,7 @@ const forceSupersedeFailure =
     const { data: performanceRows, error: performanceError } = await supabase
       .from("performance_signal_history")
       .select(
-        "id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
+        "id, location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
       )
       .eq("user_id", user.id)
       .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
@@ -1279,6 +1296,24 @@ const forceSupersedeFailure =
         latestLaborPct,
         latestMarginPct,
         latestRefunds,
+        latestPerformanceProvenance: perfPair?.latest
+          ? {
+              rowId: perfPair.latest.id,
+              sourceSystem: perfPair.latest.source_system,
+              sourceRecordId: perfPair.latest.source_record_id,
+              ingestedAt: perfPair.latest.ingested_at,
+              capturedAt: perfPair.latest.captured_at,
+            }
+          : null,
+        previousPerformanceProvenance: perfPair?.previous
+          ? {
+              rowId: perfPair.previous.id,
+              sourceSystem: perfPair.previous.source_system,
+              sourceRecordId: perfPair.previous.source_record_id,
+              ingestedAt: perfPair.previous.ingested_at,
+              capturedAt: perfPair.previous.captured_at,
+            }
+          : null,
         negativeReviewExamples: negativeReviews
           .map((review) => compactText(review.text, 120))
           .filter(Boolean)
