@@ -16,6 +16,8 @@ function getTopWorldSignal(worldModel: any) {
     ? {
         ...worldModel.topSignal.signal,
         locationName: worldModel.topSignal.locationName ?? null,
+        performanceProvenance:
+          worldModel.topSignal.performanceProvenance ?? null,
       }
     : null;
 }
@@ -51,6 +53,10 @@ export async function GET(request: Request) {
       overallScore: state.overallScore,
       level: state.level,
       scores: state.scores,
+      performanceProvenance: {
+        latest: state.metrics.latestPerformanceProvenance,
+        previous: state.metrics.previousPerformanceProvenance,
+      },
       metrics: {
         revenue: state.metrics.revenue,
         previousRevenue: state.metrics.previousRevenue,
@@ -66,6 +72,10 @@ export async function GET(request: Request) {
         openAlerts: state.metrics.openAlerts,
         pendingActions: state.metrics.pendingActions,
         avgOutcomeScore: state.metrics.avgOutcomeScore,
+        performanceProvenance: {
+          latest: state.metrics.latestPerformanceProvenance,
+          previous: state.metrics.previousPerformanceProvenance,
+        },
       },
       primaryRisk: state.primaryRisk,
       primaryOpportunity: state.primaryOpportunity,
@@ -95,6 +105,10 @@ export async function GET(request: Request) {
         avgRating: state.metrics.avgRating,
         laborPct: state.metrics.laborPct,
         marginPct: state.metrics.marginPct,
+        performanceProvenance: {
+          latest: state.metrics.latestPerformanceProvenance,
+          previous: state.metrics.previousPerformanceProvenance,
+        },
         demandScore: state.scores.demand,
         operationsScore: state.scores.operations,
         staffingScore: state.scores.staffing,

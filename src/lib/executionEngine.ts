@@ -1,3 +1,10 @@
+import type { PerformanceProvenance } from "@/lib/restaurantState";
+
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
+
 export type ExecutionMode = "automatic" | "approval_required" | "monitor";
 
 export interface ExecutionTask {
@@ -8,6 +15,7 @@ export interface ExecutionTask {
   mode: ExecutionMode;
   estimatedImpact: number;
   confidence: number;
+  performanceProvenance: PerformanceProvenancePair | null;
 }
 
 export interface ExecutionResult {
@@ -15,6 +23,7 @@ export interface ExecutionResult {
   mode: ExecutionMode;
   topTask: ExecutionTask;
   queue: ExecutionTask[];
+  performanceProvenance: PerformanceProvenancePair | null;
   generatedAt: string;
 }
 
@@ -34,6 +43,8 @@ export function buildExecutionPlan(input: BuildExecutionInput): ExecutionResult 
 
   const confidence = input.executiveAI?.confidence ?? 60;
   const risk = String(input.executiveAI?.riskLevel ?? "medium").toLowerCase();
+  const performanceProvenance =
+    input.executiveAI?.performanceProvenance ?? null;
 
   const priority =
     risk === "critical" ? 98 : risk === "high" ? 90 : risk === "medium" ? 75 : 55;
@@ -48,6 +59,7 @@ export function buildExecutionPlan(input: BuildExecutionInput): ExecutionResult 
     mode,
     estimatedImpact: confidence,
     confidence,
+    performanceProvenance,
   };
 
   return {
@@ -55,6 +67,7 @@ export function buildExecutionPlan(input: BuildExecutionInput): ExecutionResult 
     mode,
     topTask,
     queue: [topTask],
+    performanceProvenance,
     generatedAt: new Date().toISOString(),
   };
 }

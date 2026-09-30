@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 
 import {
+  buildExecutiveAI,
+} from "@/lib/executiveAI";
+
+import {
+  buildExecutionPlan,
+} from "@/lib/executionEngine";
+
+import {
   buildOperatorIntelligence,
 } from "@/lib/operatorIntelligence";
 
@@ -37,6 +45,60 @@ const performanceProvenance = {
     capturedAt: "2026-09-29T06:55:00.000Z",
   },
 };
+
+/*
+ * Executive AI must preserve the same trusted rows.
+ */
+const executiveAI =
+  buildExecutiveAI({
+    mode: "single_location",
+
+    topMove: {
+      title:
+        "Run a controlled margin test",
+
+      confidence: 82,
+
+      locationName:
+        "Test Location",
+
+      successMetric:
+        "Margin improves while revenue remains stable.",
+
+      performanceProvenance,
+    },
+  });
+
+assert.deepEqual(
+  executiveAI.performanceProvenance,
+  performanceProvenance,
+);
+
+assert.equal(
+  executiveAI.performanceProvenance
+    ?.latest?.rowId,
+  "perf-row-latest-1",
+);
+
+/*
+ * Execution Engine must preserve Executive AI provenance
+ * in both the plan and its generated top task.
+ */
+const executiveExecutionPlan =
+  buildExecutionPlan({
+    executiveAI,
+  });
+
+assert.deepEqual(
+  executiveExecutionPlan.performanceProvenance,
+  performanceProvenance,
+);
+
+assert.deepEqual(
+  executiveExecutionPlan.topTask
+    .performanceProvenance,
+  performanceProvenance,
+);
 
 /*
  * Start at Operator Intelligence.
