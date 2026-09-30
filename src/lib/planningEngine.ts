@@ -1,3 +1,10 @@
+import type { PerformanceProvenance } from "@/lib/restaurantState";
+
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
+
 export type PlanningUrgency = "low" | "medium" | "high" | "critical";
 export type PlanningImpact = "low" | "medium" | "high";
 export type PlanningRisk = "low" | "medium" | "high";
@@ -30,6 +37,7 @@ export type PlanningContext = {
   operatorMemoryLessons?: number | null;
   averageOutcomeScore?: number | null;
   reusableLessons?: number | null;
+  performanceProvenance?: PerformanceProvenancePair | null;
 };
 
 export type PlannedMove = {
@@ -37,6 +45,7 @@ export type PlannedMove = {
   title: string;
   actionType: string;
   locationName: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
   urgency: PlanningUrgency;
   impact: PlanningImpact;
   risk: PlanningRisk;
@@ -151,6 +160,7 @@ function buildMove(params: {
     title: params.title,
     actionType: params.actionType,
     locationName: params.context.locationName ?? null,
+    performanceProvenance: params.context.performanceProvenance ?? null,
     urgency: urgencyFromScore(params.urgencyScore),
     impact: impactFromScore(params.impactScore),
     risk: riskFromScore(params.riskScore),

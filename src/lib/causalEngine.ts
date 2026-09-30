@@ -1,3 +1,10 @@
+import type { PerformanceProvenance } from "@/lib/restaurantState";
+
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
+
 export type CausalConfidence = "low" | "medium" | "high";
 export type CausalSeverity = "watch" | "risk" | "critical";
 export type CausalCategory =
@@ -26,6 +33,7 @@ export type CausalMetricSnapshot = {
   openAlerts?: number | null;
   pendingActions?: number | null;
   avgOutcomeScore?: number | null;
+  performanceProvenance?: PerformanceProvenancePair | null;
 };
 
 export type CausalStateScores = {
@@ -52,6 +60,7 @@ export type CausalContext = {
 export type CausalHypothesis = {
   id: string;
   locationName: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
   category: CausalCategory;
   severity: CausalSeverity;
   confidence: CausalConfidence;
@@ -131,6 +140,8 @@ function makeHypothesis(params: {
   return {
     id: `${params.category}_${slug(locationName || "global")}_${slug(params.cause)}`,
     locationName,
+    performanceProvenance:
+      params.context.metrics?.performanceProvenance ?? null,
     category: params.category,
     severity: severityFromScore(confidenceScore),
     confidence: confidenceFromScore(confidenceScore),

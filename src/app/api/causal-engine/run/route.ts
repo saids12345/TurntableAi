@@ -59,6 +59,10 @@ export async function GET(request: Request) {
         openAlerts: state.metrics.openAlerts,
         pendingActions: state.metrics.pendingActions,
         avgOutcomeScore: state.metrics.avgOutcomeScore,
+        performanceProvenance: {
+          latest: state.metrics.latestPerformanceProvenance,
+          previous: state.metrics.previousPerformanceProvenance,
+        },
       },
       primaryRisk: state.primaryRisk,
       primaryOpportunity: state.primaryOpportunity,

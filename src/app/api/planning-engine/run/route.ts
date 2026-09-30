@@ -57,6 +57,10 @@ export async function GET(request: Request) {
       operatorMemoryLessons: state.metrics.memoryLessons,
       averageOutcomeScore: state.metrics.avgOutcomeScore,
       reusableLessons: state.metrics.reusableLessons,
+      performanceProvenance: {
+        latest: state.metrics.latestPerformanceProvenance,
+        previous: state.metrics.previousPerformanceProvenance,
+      },
     }));
 
     if (contexts.length === 1) {

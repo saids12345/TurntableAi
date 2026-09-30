@@ -335,6 +335,7 @@ function getTopWorldSignal(
   return {
     ...topSignal.signal,
     locationName: topSignal.locationName ?? null,
+    performanceProvenance: topSignal.performanceProvenance ?? null,
   };
 }
 
@@ -357,6 +358,10 @@ function buildPlanningContexts(
     operatorMemoryLessons: state.metrics.memoryLessons,
     averageOutcomeScore: state.metrics.avgOutcomeScore,
     reusableLessons: state.metrics.reusableLessons,
+    performanceProvenance: {
+      latest: state.metrics.latestPerformanceProvenance,
+      previous: state.metrics.previousPerformanceProvenance,
+    },
   }));
 }
 
@@ -383,6 +388,10 @@ function buildCausalAndPredictionContexts(
       openAlerts: state.metrics.openAlerts,
       pendingActions: state.metrics.pendingActions,
       avgOutcomeScore: state.metrics.avgOutcomeScore,
+      performanceProvenance: {
+        latest: state.metrics.latestPerformanceProvenance,
+        previous: state.metrics.previousPerformanceProvenance,
+      },
     },
     primaryRisk: state.primaryRisk,
     primaryOpportunity: state.primaryOpportunity,
@@ -400,6 +409,10 @@ function buildWorldContexts(
     avgRating: state.metrics.avgRating,
     laborPct: state.metrics.laborPct,
     marginPct: state.metrics.marginPct,
+    performanceProvenance: {
+      latest: state.metrics.latestPerformanceProvenance,
+      previous: state.metrics.previousPerformanceProvenance,
+    },
     demandScore: state.scores.demand,
     operationsScore: state.scores.operations,
     staffingScore: state.scores.staffing,
