@@ -1,3 +1,10 @@
+import type { PerformanceProvenance } from "@/lib/restaurantState";
+
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
+
 export type WorldRiskLevel = "low" | "medium" | "high" | "critical";
 export type WorldSignalType =
   | "calendar"
@@ -27,6 +34,7 @@ export type WorldModelContext = {
   serviceScore?: number | null;
   profitabilityScore?: number | null;
   reputationScore?: number | null;
+  performanceProvenance?: PerformanceProvenancePair | null;
 };
 
 export type WorldSignal = {
@@ -44,6 +52,7 @@ export type WorldSignal = {
 export type WorldModelResult = {
   ok: true;
   locationName: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
   summary: string;
   externalPressureScore: number;
   demandModifierPct: number;
@@ -392,6 +401,7 @@ export function buildWorldModel(context: WorldModelContext): WorldModelResult {
   return {
     ok: true,
     locationName,
+    performanceProvenance: context.performanceProvenance ?? null,
     summary: strongest
       ? `${strongest.label}: ${strongest.summary}`
       : "World Model is collecting external context.",
@@ -409,7 +419,13 @@ export function buildWorldModel(context: WorldModelContext): WorldModelResult {
 export function buildNetworkWorldModel(contexts: WorldModelContext[]) {
   const results = contexts.map((context) => buildWorldModel(context));
   const topSignal = results
-    .flatMap((result) => result.signals.map((signal) => ({ signal, locationName: result.locationName })))
+    .flatMap((result) =>
+      result.signals.map((signal) => ({
+        signal,
+        locationName: result.locationName,
+        performanceProvenance: result.performanceProvenance,
+      })),
+    )
     .sort((a, b) => b.signal.confidence - a.signal.confidence)[0];
 
   return {

@@ -46,6 +46,10 @@ export async function GET(request: Request) {
       serviceScore: state.scores.service,
       profitabilityScore: state.scores.profitability,
       reputationScore: state.scores.reputation,
+      performanceProvenance: {
+        latest: state.metrics.latestPerformanceProvenance,
+        previous: state.metrics.previousPerformanceProvenance,
+      },
     }));
 
     const worldModel = buildNetworkWorldModel(contexts);

@@ -1,3 +1,10 @@
+import type { PerformanceProvenance } from "@/lib/restaurantState";
+
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
+
 export type PredictionRiskLevel = "low" | "medium" | "high" | "critical";
 export type PredictionHorizon = "next_24_hours" | "next_7_days" | "next_14_days";
 
@@ -27,6 +34,7 @@ export type PredictionMetrics = {
   openAlerts?: number | null;
   pendingActions?: number | null;
   avgOutcomeScore?: number | null;
+  performanceProvenance?: PerformanceProvenancePair | null;
 };
 
 export type PredictionContext = {
@@ -42,6 +50,7 @@ export type PredictionContext = {
 export type RestaurantPrediction = {
   id: string;
   locationName: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
   horizon: PredictionHorizon;
   riskLevel: PredictionRiskLevel;
   confidence: number;
@@ -308,6 +317,7 @@ function buildPrediction(context: PredictionContext, horizon: PredictionHorizon)
   return {
     id: `prediction_${slug(locationName || "global")}_${horizon}`,
     locationName,
+    performanceProvenance: metrics.performanceProvenance ?? null,
     horizon,
     riskLevel: riskFromScore(riskScore),
     confidence,
