@@ -1,3 +1,5 @@
+import type { PerformanceProvenance } from "@/lib/restaurantState";
+
 export type OperatorIntelligenceMode = "single_location" | "network";
 
 export type OperatorJudgment =
@@ -7,6 +9,11 @@ export type OperatorJudgment =
   | "collect_more_evidence";
 
 export type OperatorRiskLevel = "low" | "medium" | "high" | "critical";
+
+type PerformanceProvenancePair = {
+  latest: PerformanceProvenance | null;
+  previous: PerformanceProvenance | null;
+};
 
 export type OperatorIntelligenceInput = {
   mode?: string | null;
@@ -66,6 +73,7 @@ export type OperatorIntelligenceInput = {
       successMetric?: string | null;
       locationName?: string | null;
       checklist?: string[];
+      performanceProvenance?: PerformanceProvenancePair | null;
     } | null;
   } | null;
 
@@ -81,6 +89,7 @@ export type OperatorIntelligenceInput = {
       recommendedActions?: string[];
       whatWouldChangeMyMind?: string[];
       locationName?: string | null;
+      performanceProvenance?: PerformanceProvenancePair | null;
     } | null;
   } | null;
 
@@ -95,6 +104,7 @@ export type OperatorIntelligenceInput = {
       ifIgnored?: string[];
       bestIntervention?: string[];
       locationName?: string | null;
+      performanceProvenance?: PerformanceProvenancePair | null;
     } | null;
   } | null;
 
@@ -112,6 +122,7 @@ export type OperatorIntelligenceInput = {
         recommendedAdjustment?: string | null;
       } | null;
       locationName?: string | null;
+      performanceProvenance?: PerformanceProvenancePair | null;
     } | null;
   } | null;
 
@@ -194,6 +205,7 @@ export type OperatorIntelligenceResult = {
   };
 
   locationFocus: string | null;
+  performanceProvenance: PerformanceProvenancePair | null;
   generatedAt: string;
 };
 
@@ -390,6 +402,13 @@ export function buildOperatorIntelligence(
     topPrediction?.locationName ??
     input.worldModel?.topSignal?.locationName ??
     highestRiskState?.locationName ??
+    null;
+
+  const performanceProvenance =
+    topMove?.performanceProvenance ??
+    topCause?.performanceProvenance ??
+    topPrediction?.performanceProvenance ??
+    input.worldModel?.topSignal?.performanceProvenance ??
     null;
 
   const riskLevel = normalizeRisk(
@@ -603,6 +622,7 @@ export function buildOperatorIntelligence(
     },
 
     locationFocus,
+    performanceProvenance,
     generatedAt: new Date().toISOString(),
   };
 }
