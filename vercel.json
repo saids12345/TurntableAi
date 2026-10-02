@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/gmail-yelp",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/square-performance",
+      "schedule": "0 11 * * *"
     }
   ]
 }
