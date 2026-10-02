@@ -366,3 +366,90 @@ export async function saveSquareConnection(
       normalizedLocations.length,
   };
 }
+
+export async function updateSquareConnectionTokens(
+  input: {
+    connectionId: string;
+    merchantId: string;
+    accessToken: string;
+    refreshToken: string;
+    accessTokenExpiresAt?: string | null;
+    refreshTokenExpiresAt?: string | null;
+  },
+) {
+  const connectionId =
+    requireValue(
+      input.connectionId,
+      "Square connection id",
+    );
+
+  const merchantId =
+    requireValue(
+      input.merchantId,
+      "Square merchant id",
+    );
+
+  const accessToken =
+    requireValue(
+      input.accessToken,
+      "Square access token",
+    );
+
+  const refreshToken =
+    requireValue(
+      input.refreshToken,
+      "Square refresh token",
+    );
+
+  const supabase =
+    getSupabaseAdmin();
+
+  const { data, error } =
+    await supabase
+      .from("pos_connections")
+      .update({
+        access_token_encrypted:
+          encryptPosToken(
+            accessToken,
+          ),
+
+        refresh_token_encrypted:
+          encryptPosToken(
+            refreshToken,
+          ),
+
+        access_token_expires_at:
+          input.accessTokenExpiresAt ??
+          null,
+
+        refresh_token_expires_at:
+          input.refreshTokenExpiresAt ??
+          null,
+
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq("id", connectionId)
+      .eq("provider", "square")
+      .eq("environment", "production")
+      .eq(
+        "provider_account_id",
+        merchantId,
+      )
+      .select("id")
+      .single();
+
+  if (error || !data?.id) {
+    throw new Error(
+      `Square token persistence failed: ${
+        error?.message ??
+        "connection not found"
+      }`,
+    );
+  }
+
+  return {
+    connectionId:
+      String(data.id),
+  };
+}

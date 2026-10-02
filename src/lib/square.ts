@@ -391,3 +391,249 @@ export function getConfiguredSquareEnvironment():
   SquareEnvironment {
   return getSquareEnvironment();
 }
+
+export type SquareMoney = {
+  amount?: number;
+  currency?: string;
+};
+
+export type SquareOrder = {
+  id?: string;
+  location_id?: string;
+  state?: string;
+  closed_at?: string;
+  total_money?: SquareMoney;
+};
+
+type SquareSearchOrdersResponse = {
+  orders?: SquareOrder[];
+  cursor?: string;
+  errors?: SquareOAuthError[];
+};
+
+export type SearchSquareCompletedOrdersInput = {
+  accessToken: string;
+  locationId: string;
+  startAt: string;
+  endAt: string;
+};
+
+function requireSquareSearchValue(
+  value: string,
+  label: string,
+) {
+  const clean = value.trim();
+
+  if (!clean) {
+    throw new Error(
+      `${label} is required.`,
+    );
+  }
+
+  return clean;
+}
+
+function requireSquareSearchTimestamp(
+  value: string,
+  label: string,
+) {
+  const clean =
+    requireSquareSearchValue(
+      value,
+      label,
+    );
+
+  const timestamp =
+    Date.parse(clean);
+
+  if (!Number.isFinite(timestamp)) {
+    throw new Error(
+      `${label} must be a valid RFC 3339 timestamp.`,
+    );
+  }
+
+  return clean;
+}
+
+export async function searchSquareCompletedOrders(
+  input: SearchSquareCompletedOrdersInput,
+): Promise<SquareOrder[]> {
+  const accessToken =
+    requireSquareSearchValue(
+      input.accessToken,
+      "Square access token",
+    );
+
+  const locationId =
+    requireSquareSearchValue(
+      input.locationId,
+      "Square location id",
+    );
+
+  const startAt =
+    requireSquareSearchTimestamp(
+      input.startAt,
+      "Square order search startAt",
+    );
+
+  const endAt =
+    requireSquareSearchTimestamp(
+      input.endAt,
+      "Square order search endAt",
+    );
+
+  if (
+    Date.parse(endAt) <
+    Date.parse(startAt)
+  ) {
+    throw new Error(
+      "Square order search endAt must not be before startAt.",
+    );
+  }
+
+  const environment =
+    getSquareEnvironment();
+
+  const orders:
+    SquareOrder[] = [];
+
+  let cursor:
+    string | undefined;
+
+  do {
+    const requestBody: {
+      location_ids: string[];
+      query: {
+        filter: {
+          date_time_filter: {
+            closed_at: {
+              start_at: string;
+              end_at: string;
+            };
+          };
+          state_filter: {
+            states: string[];
+          };
+        };
+        sort: {
+          sort_field: string;
+          sort_order: string;
+        };
+      };
+      limit: number;
+      return_entries: boolean;
+      cursor?: string;
+    } = {
+      location_ids: [
+        locationId,
+      ],
+
+      query: {
+        filter: {
+          date_time_filter: {
+            closed_at: {
+              start_at:
+                startAt,
+
+              end_at:
+                endAt,
+            },
+          },
+
+          state_filter: {
+            states: [
+              "COMPLETED",
+            ],
+          },
+        },
+
+        sort: {
+          sort_field:
+            "CLOSED_AT",
+
+          sort_order:
+            "ASC",
+        },
+      },
+
+      limit:
+        1000,
+
+      return_entries:
+        false,
+    };
+
+    if (cursor) {
+      requestBody.cursor =
+        cursor;
+    }
+
+    const response =
+      await fetch(
+        `${getSquareApiBaseUrl(
+          environment,
+        )}/v2/orders/search`,
+        {
+          method:
+            "POST",
+
+          headers: {
+            Authorization:
+              `Bearer ${accessToken}`,
+
+            "Square-Version":
+              getSquareApiVersion(),
+
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify(
+              requestBody,
+            ),
+
+          cache:
+            "no-store",
+        },
+      );
+
+    const body =
+      (await response
+        .json()
+        .catch(
+          () => ({}),
+        )) as
+        SquareSearchOrdersResponse;
+
+    if (
+      !response.ok ||
+      body.errors?.length
+    ) {
+      throw new Error(
+        `Square orders request failed: ${describeSquareErrors(
+          body.errors,
+        )}`,
+      );
+    }
+
+    if (
+      Array.isArray(
+        body.orders,
+      )
+    ) {
+      orders.push(
+        ...body.orders,
+      );
+    }
+
+    cursor =
+      typeof body.cursor ===
+        "string" &&
+      body.cursor.trim()
+        ? body.cursor.trim()
+        : undefined;
+  } while (cursor);
+
+  return orders;
+}
