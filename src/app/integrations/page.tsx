@@ -99,6 +99,57 @@ function IntegrationsContent() {
     };
   }, []);
 
+  const [
+    squareDisconnecting,
+    setSquareDisconnecting,
+  ] = useState(false);
+
+  const [
+    squareDisconnectError,
+    setSquareDisconnectError,
+  ] = useState(false);
+
+  async function disconnectSquare() {
+    const confirmed =
+      window.confirm(
+        "Disconnect Square from TurnTableAI?",
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSquareDisconnecting(true);
+    setSquareDisconnectError(false);
+
+    try {
+      const response =
+        await fetch(
+          "/api/square/disconnect",
+          {
+            method: "POST",
+          },
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          "Square disconnect failed.",
+        );
+      }
+
+      setSquareStatus({
+        loading: false,
+        connected: false,
+        locationCount: 0,
+        error: false,
+      });
+    } catch {
+      setSquareDisconnectError(true);
+    } finally {
+      setSquareDisconnecting(false);
+    }
+  }
+
   const connected =
     q.get("connected");
 
@@ -237,16 +288,42 @@ function IntegrationsContent() {
                 </div>
               </div>
 
-              <form
-                action="/api/square/auth/start"
-                method="GET"
-              >
-                <button className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20">
-                  {squareStatus.connected
-                    ? "Reconnect"
-                    : "Connect Square"}
-                </button>
-              </form>
+              {squareStatus.connected ? (
+                <div className="flex gap-2">
+                  <form
+                    action="/api/square/auth/start"
+                    method="GET"
+                  >
+                    <button className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20">
+                      Reconnect
+                    </button>
+                  </form>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void disconnectSquare();
+                    }}
+                    disabled={
+                      squareDisconnecting
+                    }
+                    className="rounded-lg border border-white/10 px-4 py-2 text-sm hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {squareDisconnecting
+                      ? "Disconnecting..."
+                      : "Disconnect"}
+                  </button>
+                </div>
+              ) : (
+                <form
+                  action="/api/square/auth/start"
+                  method="GET"
+                >
+                  <button className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20">
+                    Connect Square
+                  </button>
+                </form>
+              )}
             </div>
 
             {squareStatus.loading && (
@@ -272,6 +349,12 @@ function IntegrationsContent() {
             {squareStatus.error && (
               <p className="mt-3 text-xs text-white/50">
                 Square connection status is temporarily unavailable.
+              </p>
+            )}
+
+            {squareDisconnectError && (
+              <p className="mt-3 text-xs text-white/50">
+                Square could not be disconnected. Please try again.
               </p>
             )}
           </div>
