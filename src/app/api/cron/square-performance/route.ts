@@ -11,6 +11,10 @@ import {
   syncSquareDailyPerformanceForUser,
 } from "@/lib/squareDailySync";
 
+import {
+  getSquareCronHttpStatus,
+} from "@/lib/squareCronStatus";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -66,20 +70,32 @@ export async function GET(
         result.skipped.length;
     }
 
-    return NextResponse.json({
-      ok:
-        failureCount === 0,
+    const status =
+      getSquareCronHttpStatus(
+        failureCount,
+      );
 
-      users:
-        userIds.length,
+    const ok =
+      status === 200;
 
-      syncedRows,
-      failureCount,
-      skippedCount,
+    return NextResponse.json(
+      {
+        ok,
 
-      generatedAt:
-        new Date().toISOString(),
-    });
+        users:
+          userIds.length,
+
+        syncedRows,
+        failureCount,
+        skippedCount,
+
+        generatedAt:
+          new Date().toISOString(),
+      },
+      {
+        status,
+      },
+    );
   } catch (error) {
     console.error(
       "Square performance cron failed:",
