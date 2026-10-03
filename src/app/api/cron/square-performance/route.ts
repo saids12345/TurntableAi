@@ -15,6 +15,10 @@ import {
   getSquareCronHttpStatus,
 } from "@/lib/squareCronStatus";
 
+import {
+  runSquareCronUsers,
+} from "@/lib/squareCronRunner";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -49,26 +53,19 @@ export async function GET(
     const userIds =
       await listSquareProductionUserIds();
 
-    let syncedRows = 0;
-    let failureCount = 0;
-    let skippedCount = 0;
-
-    for (const userId of userIds) {
-      const result =
-        await syncSquareDailyPerformanceForUser({
-          userId,
-          completedDays: 3,
-        });
-
-      syncedRows +=
-        result.syncedRows;
-
-      failureCount +=
-        result.failures.length;
-
-      skippedCount +=
-        result.skipped.length;
-    }
+    const {
+      syncedRows,
+      failureCount,
+      skippedCount,
+    } =
+      await runSquareCronUsers(
+        userIds,
+        async (userId) =>
+          syncSquareDailyPerformanceForUser({
+            userId,
+            completedDays: 3,
+          }),
+      );
 
     const status =
       getSquareCronHttpStatus(
