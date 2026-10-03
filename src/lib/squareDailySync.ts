@@ -20,6 +20,24 @@ import {
   getRecentCompletedLocalDates,
 } from "@/lib/squareDailyPerformance";
 
+import {
+  markSquareConnectionSynced,
+} from "@/lib/squareConnectionStore";
+
+export function shouldMarkSquareConnectionSynced(
+  input: {
+    syncedRows: number;
+    failureCountBefore: number;
+    failureCountAfter: number;
+  },
+) {
+  return (
+    input.syncedRows > 0 &&
+    input.failureCountAfter ===
+      input.failureCountBefore
+  );
+}
+
 export async function syncSquareDailyPerformanceForUser(
   input: {
     userId: string;
@@ -47,6 +65,11 @@ export async function syncSquareDailyPerformanceForUser(
   const failures: string[] = [];
 
   for (const connection of connections) {
+    const failureCountBefore =
+      failures.length;
+
+    let connectionSyncedRows = 0;
+
     let accessToken: string;
 
     try {
@@ -128,6 +151,7 @@ export async function syncSquareDailyPerformanceForUser(
           });
 
           syncedRows += 1;
+          connectionSyncedRows += 1;
         } catch (error) {
           failures.push(
             `${location.name} ${localDate}: ${
@@ -137,6 +161,45 @@ export async function syncSquareDailyPerformanceForUser(
             }`,
           );
         }
+      }
+    }
+
+    if (
+      shouldMarkSquareConnectionSynced({
+        syncedRows:
+          connectionSyncedRows,
+
+        failureCountBefore,
+
+        failureCountAfter:
+          failures.length,
+      })
+    ) {
+      try {
+        await markSquareConnectionSynced({
+          connectionId:
+            connection.connectionId,
+
+          userId:
+            connection.userId,
+
+          merchantId:
+            connection.merchantId,
+
+          syncedAt:
+            (
+              input.now ??
+              new Date()
+            ).toISOString(),
+        });
+      } catch (error) {
+        failures.push(
+          `Merchant ${connection.merchantId}: ${
+            error instanceof Error
+              ? error.message
+              : "sync timestamp persistence failed"
+          }`,
+        );
       }
     }
   }

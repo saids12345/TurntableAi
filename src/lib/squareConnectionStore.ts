@@ -453,3 +453,86 @@ export async function updateSquareConnectionTokens(
       String(data.id),
   };
 }
+
+export async function markSquareConnectionSynced(
+  input: {
+    connectionId: string;
+    userId: string;
+    merchantId: string;
+    syncedAt?: string;
+  },
+) {
+  const connectionId =
+    requireValue(
+      input.connectionId,
+      "Square connection id",
+    );
+
+  const userId =
+    requireValue(
+      input.userId,
+      "Square connection user id",
+    );
+
+  const merchantId =
+    requireValue(
+      input.merchantId,
+      "Square merchant id",
+    );
+
+  const syncedAt =
+    input.syncedAt ??
+    new Date().toISOString();
+
+  const supabase =
+    getSupabaseAdmin();
+
+  const { data, error } =
+    await supabase
+      .from("pos_connections")
+      .update({
+        last_synced_at:
+          syncedAt,
+
+        updated_at:
+          syncedAt,
+      })
+      .eq(
+        "id",
+        connectionId,
+      )
+      .eq(
+        "user_id",
+        userId,
+      )
+      .eq(
+        "provider",
+        "square",
+      )
+      .eq(
+        "environment",
+        "production",
+      )
+      .eq(
+        "provider_account_id",
+        merchantId,
+      )
+      .select("id")
+      .single();
+
+  if (error || !data?.id) {
+    throw new Error(
+      `Square sync timestamp persistence failed: ${
+        error?.message ??
+        "connection not found"
+      }`,
+    );
+  }
+
+  return {
+    connectionId:
+      String(data.id),
+
+    syncedAt,
+  };
+}
