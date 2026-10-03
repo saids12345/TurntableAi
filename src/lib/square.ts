@@ -637,3 +637,83 @@ export async function searchSquareCompletedOrders(
 
   return orders;
 }
+
+type SquareRevokeResponse = {
+  success?: boolean;
+  errors?: SquareOAuthError[];
+};
+
+export async function revokeSquareAuthorization(
+  merchantId: string,
+) {
+  const cleanMerchantId =
+    merchantId.trim();
+
+  if (!cleanMerchantId) {
+    throw new Error(
+      "Square merchant id is required for revocation.",
+    );
+  }
+
+  const environment =
+    getSquareEnvironment();
+
+  const response =
+    await fetch(
+      `${getSquareOAuthBaseUrl(
+        environment,
+      )}/revoke`,
+      {
+        method: "POST",
+
+        headers: {
+          Authorization:
+            `Client ${getSquareApplicationSecret()}`,
+
+          "Square-Version":
+            getSquareApiVersion(),
+
+          "Content-Type":
+            "application/json",
+        },
+
+        body:
+          JSON.stringify({
+            client_id:
+              getSquareApplicationId(),
+
+            merchant_id:
+              cleanMerchantId,
+
+            revoke_only_access_token:
+              false,
+          }),
+
+        cache: "no-store",
+      },
+    );
+
+  const body =
+    (await response
+      .json()
+      .catch(
+        () => ({}),
+      )) as
+      SquareRevokeResponse;
+
+  if (
+    !response.ok ||
+    body.errors?.length ||
+    body.success !== true
+  ) {
+    throw new Error(
+      `Square authorization revocation failed: ${describeSquareErrors(
+        body.errors,
+      )}`,
+    );
+  }
+
+  return {
+    success: true as const,
+  };
+}
