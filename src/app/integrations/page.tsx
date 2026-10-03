@@ -15,8 +15,30 @@ type SquareStatus = {
   loading: boolean;
   connected: boolean;
   locationCount: number;
+  lastSyncedAt: string | null;
   error: boolean;
 };
+
+function formatSquareLastSyncedAt(
+  value: string | null,
+) {
+  if (!value) {
+    return "Not yet synced";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return "Unavailable";
+  }
+
+  return date.toLocaleString();
+}
 
 function IntegrationsContent() {
   const q =
@@ -35,6 +57,7 @@ function IntegrationsContent() {
       loading: true,
       connected: false,
       locationCount: 0,
+      lastSyncedAt: null,
       error: false,
     });
 
@@ -61,6 +84,7 @@ function IntegrationsContent() {
           (await response.json()) as {
             connected?: boolean;
             locationCount?: number;
+            lastSyncedAt?: string | null;
           };
 
         if (cancelled) {
@@ -76,6 +100,11 @@ function IntegrationsContent() {
             "number"
               ? json.locationCount
               : 0,
+          lastSyncedAt:
+            typeof json.lastSyncedAt ===
+            "string"
+              ? json.lastSyncedAt
+              : null,
           error: false,
         });
       } catch {
@@ -87,6 +116,7 @@ function IntegrationsContent() {
           loading: false,
           connected: false,
           locationCount: 0,
+          lastSyncedAt: null,
           error: true,
         });
       }
@@ -141,6 +171,7 @@ function IntegrationsContent() {
         loading: false,
         connected: false,
         locationCount: 0,
+        lastSyncedAt: null,
         error: false,
       });
     } catch {
@@ -333,17 +364,26 @@ function IntegrationsContent() {
             )}
 
             {squareStatus.connected && (
-              <p className="mt-3 text-xs text-white/60">
-                {
-                  squareStatus.locationCount
-                }{" "}
-                Square location
-                {squareStatus.locationCount ===
-                1
-                  ? ""
-                  : "s"}{" "}
-                connected.
-              </p>
+              <div className="mt-3 space-y-1 text-xs text-white/60">
+                <p>
+                  {
+                    squareStatus.locationCount
+                  }{" "}
+                  Square location
+                  {squareStatus.locationCount ===
+                  1
+                    ? ""
+                    : "s"}{" "}
+                  connected.
+                </p>
+
+                <p>
+                  Last successful sync:{" "}
+                  {formatSquareLastSyncedAt(
+                    squareStatus.lastSyncedAt,
+                  )}
+                </p>
+              </div>
             )}
 
             {squareStatus.error && (
