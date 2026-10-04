@@ -401,13 +401,18 @@ function requireText(
   return clean;
 }
 
-function readOrderAmount(
-  order: SquareOrder,
+function readOrderMoney(
+  money:
+    | {
+        amount?: number;
+        currency?: string;
+      }
+    | undefined,
   expectedCurrency: string,
+  label: string,
 ) {
   const amount =
-    order.total_money
-      ?.amount;
+    money?.amount;
 
   if (
     typeof amount !==
@@ -418,13 +423,12 @@ function readOrderAmount(
     amount < 0
   ) {
     throw new Error(
-      `Square completed order ${order.id ?? "(unknown)"} is missing a valid total_money.amount.`,
+      `${label} is missing a valid amount.`,
     );
   }
 
   const currency =
-    order.total_money
-      ?.currency
+    money?.currency
       ?.trim()
       .toUpperCase();
 
@@ -433,11 +437,78 @@ function readOrderAmount(
     expectedCurrency
   ) {
     throw new Error(
-      `Square completed order ${order.id ?? "(unknown)"} has unexpected currency ${currency || "(missing)"}.`,
+      `${label} has unexpected currency ${currency || "(missing)"}.`,
     );
   }
 
   return amount;
+}
+
+function readOrderAmount(
+  order: SquareOrder,
+  expectedCurrency: string,
+) {
+  const orderId =
+    order.id ??
+    "(unknown)";
+
+  if (
+    (order.returns?.length ?? 0) >
+      0 ||
+    (order.refunds?.length ?? 0) >
+      0
+  ) {
+    throw new Error(
+      `Square completed order ${orderId} contains returns or refunds. Trusted daily sales V1 fails closed.`,
+    );
+  }
+
+  const total =
+    readOrderMoney(
+      order.total_money,
+      expectedCurrency,
+      `Square completed order ${orderId} total_money`,
+    );
+
+  const tax =
+    readOrderMoney(
+      order.total_tax_money,
+      expectedCurrency,
+      `Square completed order ${orderId} total_tax_money`,
+    );
+
+  const tip =
+    readOrderMoney(
+      order.total_tip_money,
+      expectedCurrency,
+      `Square completed order ${orderId} total_tip_money`,
+    );
+
+  const serviceCharge =
+    readOrderMoney(
+      order.total_service_charge_money,
+      expectedCurrency,
+      `Square completed order ${orderId} total_service_charge_money`,
+    );
+
+  if (serviceCharge > 0) {
+    throw new Error(
+      `Square completed order ${orderId} contains service charges. Trusted daily sales V1 fails closed.`,
+    );
+  }
+
+  const revenue =
+    total -
+    tax -
+    tip;
+
+  if (revenue < 0) {
+    throw new Error(
+      `Square completed order ${orderId} produced negative trusted sales.`,
+    );
+  }
+
+  return revenue;
 }
 
 export function aggregateSquareDailyPerformance(
