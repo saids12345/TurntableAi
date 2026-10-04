@@ -2,6 +2,7 @@
 import BillingClient from "./BillingClient";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { hasProAccess } from "@/lib/plans";
+import { sanitizeInternalPath } from "@/lib/safeInternalPath";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,9 @@ export default async function BillingPage({
 
   const nextParam = searchParams?.next;
   const next =
-    typeof nextParam === "string" && nextParam.startsWith("/") ? nextParam : "/";
+    sanitizeInternalPath(
+      nextParam,
+    );
 
   const {
     data: { user },

@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { sanitizeInternalPath } from "@/lib/safeInternalPath";
+import {
+  findReusableStripeCheckoutUrl,
+  shouldBlockNewStripeCheckout,
+} from "@/lib/stripeCheckoutPolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,13 +22,15 @@ function getBaseUrl(): string {
 }
 
 function sanitizeNextPath(next: unknown): string {
-  if (typeof next !== "string") return "/";
-  if (!next.startsWith("/")) return "/";
+  const safeNext =
+    sanitizeInternalPath(next);
+
   // prevent loops / unsafe redirects
-  if (next.startsWith("/login")) return "/";
-  if (next.startsWith("/auth")) return "/";
-  if (next.startsWith("/api")) return "/";
-  return next;
+  if (safeNext.startsWith("/login")) return "/";
+  if (safeNext.startsWith("/auth")) return "/";
+  if (safeNext.startsWith("/api")) return "/";
+
+  return safeNext;
 }
 
 export async function POST(req: Request) {
@@ -74,13 +81,16 @@ export async function POST(req: Request) {
       );
     }
 
-    // If already has an active/trialing subscription, don't create another.
-    // (We allow incomplete/incomplete_expired to retry.)
+    // Do not create another checkout while Stripe still has
+    // a non-terminal subscription. Only canceled or
+    // incomplete_expired subscriptions may start again.
     const status = profile?.stripe_subscription_status ?? null;
-    const hasUsedTrial = Boolean(profile?.stripe_trial_used_at);
+    let hasUsedTrial = Boolean(profile?.stripe_trial_used_at);
 
     const alreadySubscribed =
-      status === "active" || status === "trialing" || status === "past_due";
+      shouldBlockNewStripeCheckout(
+        status,
+      );
 
     if (alreadySubscribed) {
       return NextResponse.json(
@@ -133,12 +143,123 @@ export async function POST(req: Request) {
       }
     }
 
+    /*
+     * Stripe is authoritative for current subscription state.
+     * This protects against a stale Supabase profile creating
+     * a duplicate subscription or duplicate free trial.
+     */
+    const stripeSubscriptions =
+      await stripe.subscriptions.list({
+        customer:
+          customerId,
+        status:
+          "all",
+        limit:
+          100,
+      });
+
+    if (stripeSubscriptions.has_more) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Could not safely verify existing Stripe subscriptions.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    const stripeAlreadySubscribed =
+      stripeSubscriptions.data.some(
+        (subscription) =>
+          shouldBlockNewStripeCheckout(
+            subscription.status,
+          ),
+      );
+
+    if (stripeAlreadySubscribed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "You already have a subscription on this account. Use Manage billing.",
+          code:
+            "ALREADY_SUBSCRIBED",
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
+    if (!hasUsedTrial) {
+      hasUsedTrial =
+        stripeSubscriptions.data.some(
+          (subscription) =>
+            typeof subscription.trial_start ===
+            "number",
+        );
+    }
+
     const successUrl = `${appUrl}/billing?success=1&next=${encodeURIComponent(
       nextPath
     )}`;
     const cancelUrl = `${appUrl}/billing?canceled=1&next=${encodeURIComponent(
       nextPath
     )}`;
+
+    const openCheckoutSessions =
+      await stripe.checkout.sessions.list({
+        customer:
+          customerId,
+        status:
+          "open",
+        limit:
+          100,
+      });
+
+    if (openCheckoutSessions.has_more) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Could not safely verify existing Stripe checkout sessions.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    const reusableCheckoutUrl =
+      findReusableStripeCheckoutUrl({
+        sessions:
+          openCheckoutSessions.data,
+
+        userId:
+          user.id,
+
+        priceId,
+
+        successUrl,
+        cancelUrl,
+      });
+
+    if (reusableCheckoutUrl) {
+      return NextResponse.json(
+        {
+          ok: true,
+          url:
+            reusableCheckoutUrl,
+          reused: true,
+        },
+        {
+          status: 200,
+        },
+      );
+    }
 
     const session = await stripe.checkout.sessions.create(
       {
@@ -148,7 +269,12 @@ export async function POST(req: Request) {
 
         // Helps you correlate Stripe → Supabase user
         client_reference_id: user.id,
-        metadata: { supabase_user_id: user.id },
+        metadata: {
+          supabase_user_id:
+            user.id,
+          turntable_price_id:
+            priceId,
+        },
 
         // Card required to start trial
         payment_method_collection: "always",
