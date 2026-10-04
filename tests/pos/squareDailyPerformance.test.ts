@@ -92,7 +92,31 @@ async function main() {
 
             total_money: {
               amount:
-                1250,
+                1500,
+
+              currency:
+                "USD",
+            },
+
+            total_tax_money: {
+              amount:
+                150,
+
+              currency:
+                "USD",
+            },
+
+            total_tip_money: {
+              amount:
+                100,
+
+              currency:
+                "USD",
+            },
+
+            total_service_charge_money: {
+              amount:
+                0,
 
               currency:
                 "USD",
@@ -111,7 +135,31 @@ async function main() {
 
             total_money: {
               amount:
-                2750,
+                3150,
+
+              currency:
+                "USD",
+            },
+
+            total_tax_money: {
+              amount:
+                250,
+
+              currency:
+                "USD",
+            },
+
+            total_tip_money: {
+              amount:
+                150,
+
+              currency:
+                "USD",
+            },
+
+            total_service_charge_money: {
+              amount:
+                0,
 
               currency:
                 "USD",
@@ -204,6 +252,188 @@ async function main() {
         },
       ),
     /only supports USD/,
+  );
+
+  assert.throws(
+    () =>
+      aggregateSquareDailyPerformance(
+        {
+          environment:
+            "production",
+
+          merchantId:
+            "merchant-1",
+
+          locationId:
+            "location-1",
+
+          locationName:
+            "Main Street",
+
+          currency:
+            "USD",
+
+          localDate:
+            "2026-10-01",
+
+          capturedAt:
+            "2026-10-02T07:00:00.000Z",
+
+          orders: [
+            {
+              id:
+                "refunded-order",
+
+              location_id:
+                "location-1",
+
+              state:
+                "COMPLETED",
+
+              total_money: {
+                amount:
+                  1000,
+
+                currency:
+                  "USD",
+              },
+
+              refunds: [
+                {},
+              ],
+            },
+          ],
+        },
+      ),
+    /contains returns or refunds/,
+  );
+
+  assert.throws(
+    () =>
+      aggregateSquareDailyPerformance(
+        {
+          environment:
+            "production",
+
+          merchantId:
+            "merchant-1",
+
+          locationId:
+            "location-1",
+
+          locationName:
+            "Main Street",
+
+          currency:
+            "USD",
+
+          localDate:
+            "2026-10-01",
+
+          capturedAt:
+            "2026-10-02T07:00:00.000Z",
+
+          orders: [
+            {
+              id:
+                "returned-order",
+
+              location_id:
+                "location-1",
+
+              state:
+                "COMPLETED",
+
+              total_money: {
+                amount:
+                  1000,
+
+                currency:
+                  "USD",
+              },
+
+              returns: [
+                {},
+              ],
+            },
+          ],
+        },
+      ),
+    /contains returns or refunds/,
+  );
+
+  assert.throws(
+    () =>
+      aggregateSquareDailyPerformance(
+        {
+          environment:
+            "production",
+
+          merchantId:
+            "merchant-1",
+
+          locationId:
+            "location-1",
+
+          locationName:
+            "Main Street",
+
+          currency:
+            "USD",
+
+          localDate:
+            "2026-10-01",
+
+          capturedAt:
+            "2026-10-02T07:00:00.000Z",
+
+          orders: [
+            {
+              id:
+                "service-charge-order",
+
+              location_id:
+                "location-1",
+
+              state:
+                "COMPLETED",
+
+              total_money: {
+                amount:
+                  1100,
+
+                currency:
+                  "USD",
+              },
+
+              total_tax_money: {
+                amount:
+                  0,
+
+                currency:
+                  "USD",
+              },
+
+              total_tip_money: {
+                amount:
+                  0,
+
+                currency:
+                  "USD",
+              },
+
+              total_service_charge_money: {
+                amount:
+                  100,
+
+                currency:
+                  "USD",
+              },
+            },
+          ],
+        },
+      ),
+    /contains service charges/,
   );
 
   const originalFetch =

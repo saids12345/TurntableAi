@@ -403,6 +403,11 @@ export type SquareOrder = {
   state?: string;
   closed_at?: string;
   total_money?: SquareMoney;
+  total_tax_money?: SquareMoney;
+  total_tip_money?: SquareMoney;
+  total_service_charge_money?: SquareMoney;
+  returns?: unknown[];
+  refunds?: unknown[];
 };
 
 type SquareSearchOrdersResponse = {
