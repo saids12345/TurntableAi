@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { isAllowedStripeStatus } from "@/lib/plans";
+import { sanitizeInternalPath } from "@/lib/safeInternalPath";
 
 type Props = {
   authed: boolean;
@@ -47,7 +48,10 @@ export default function BillingClient({
   const [loading, setLoading] = useState<"checkout" | "portal" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const safeNext = nextPath.startsWith("/") ? nextPath : "/";
+  const safeNext =
+    sanitizeInternalPath(
+      nextPath,
+    );
 
   const billingPathWithNext = useMemo(() => {
     return `/billing?next=${encodeURIComponent(safeNext)}`;
