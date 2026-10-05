@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ function toNumber(value: unknown): number | null {
 }
 
 export async function GET() {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
     const {

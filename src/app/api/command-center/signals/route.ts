@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 import { getOperatorSnapshot } from "@/lib/operatorSnapshot";
 
 export const runtime = "nodejs";
@@ -127,6 +128,8 @@ async function triggerInsightGeneration(request: Request, supabase: Awaited<Retu
 ========================= */
 
 export async function GET(request: Request) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
     const {

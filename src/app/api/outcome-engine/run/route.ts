@@ -4,6 +4,7 @@ import {
   MIN_OUTCOME_VERIFICATION_AGE_HOURS,
 } from "@/lib/outcomeEngine";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,8 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 }
 
 export async function GET() {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 
@@ -67,6 +70,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 

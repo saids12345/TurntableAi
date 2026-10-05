@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1219,6 +1220,8 @@ async function runLearning(params: {
 }
 
 export async function GET() {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 
@@ -1261,6 +1264,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 

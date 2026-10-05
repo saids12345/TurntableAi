@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 import { getRestaurantStates } from "@/lib/restaurantState";
 import { createNetworkPlanningResult, createPlanningResult } from "@/lib/planningEngine";
 
@@ -7,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 

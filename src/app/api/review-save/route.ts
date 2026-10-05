@@ -1,4 +1,5 @@
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
 type SavePayload = {
   reviewId: string;
@@ -9,6 +10,8 @@ type SavePayload = {
 };
 
 export async function POST(req: Request) {
+  await requireProForApi();
+
   try {
     const body = (await req.json()) as SavePayload;
 

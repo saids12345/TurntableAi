@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,8 @@ type InsightSnapshotPayload = {
 };
 
 export async function GET(req: NextRequest) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
     const {
@@ -68,6 +71,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
     const {

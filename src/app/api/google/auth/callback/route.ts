@@ -2,7 +2,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCode, listAccounts, listLocations } from "@/lib/google";
 import { upsertConn } from "@/lib/store";
-import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import {
+  getGoogleOAuthStateCookieOptions,
+  GOOGLE_OAUTH_STATE_COOKIE,
+  GOOGLE_OAUTH_USER_COOKIE,
+  verifyGoogleOAuthState,
+} from "@/lib/googleOAuthState";
 import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
@@ -10,18 +15,33 @@ export const dynamic = "force-dynamic";
 
 function redirectTo(req: NextRequest, search: string) {
   const origin = new URL(req.url).origin;
-  return NextResponse.redirect(new URL(`/integrations${search}`, origin));
-}
 
-function safeDecodeState(state: string | null): { u?: string; e?: string } {
-  if (!state) return {};
-  try {
-    const json = Buffer.from(state, "base64url").toString("utf8");
-    const parsed = JSON.parse(json) as { u?: string; e?: string };
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
+  const response = NextResponse.redirect(
+    new URL(`/integrations${search}`, origin),
+  );
+
+  const cookieOptions =
+    getGoogleOAuthStateCookieOptions();
+
+  response.cookies.set(
+    GOOGLE_OAUTH_STATE_COOKIE,
+    "",
+    {
+      ...cookieOptions,
+      maxAge: 0,
+    },
+  );
+
+  response.cookies.set(
+    GOOGLE_OAUTH_USER_COOKIE,
+    "",
+    {
+      ...cookieOptions,
+      maxAge: 0,
+    },
+  );
+
+  return response;
 }
 
 /**
@@ -29,41 +49,69 @@ function safeDecodeState(state: string | null): { u?: string; e?: string } {
  * and upserts a connection for the signed-in user in Supabase.
  */
 export async function GET(req: NextRequest) {
-  // 🔒 Pro lock (trial or paid)
-  await requireProForApi();
-
   const url = new URL(req.url);
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
 
-  if (!code) return redirectTo(req, "?error=missing_code");
+  const code = url.searchParams.get("code");
+  const returnedState = url.searchParams.get("state");
+
+  const storedState =
+    req.cookies.get(
+      GOOGLE_OAUTH_STATE_COOKIE,
+    )?.value;
+
+  const initiatingUserId =
+    req.cookies.get(
+      GOOGLE_OAUTH_USER_COOKIE,
+    )?.value;
+
+  if (
+    !verifyGoogleOAuthState(
+      returnedState,
+      storedState,
+    )
+  ) {
+    return redirectTo(
+      req,
+      "?error=google_state_mismatch",
+    );
+  }
 
   try {
-    // 1) Must be signed in (use session cookies)
-    const supabase = await getSupabaseRouteClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+    const { user } =
+      await requireProForApi();
 
-    if (userError || !user) {
-      return redirectTo(req, "?error=not_authenticated");
+    if (
+      !initiatingUserId ||
+      initiatingUserId !== user.id
+    ) {
+      return redirectTo(
+        req,
+        "?error=google_user_mismatch",
+      );
     }
 
-    // 2) Verify state user matches signed-in user (CSRF / wrong-account protection)
-    const parsed = safeDecodeState(state);
-    const stateUserId = parsed?.u ? String(parsed.u) : null;
+    const oauthError =
+      url.searchParams.get("error");
 
-    if (!stateUserId) {
-      return redirectTo(req, "?error=missing_state");
+    if (oauthError) {
+      return redirectTo(
+        req,
+        oauthError === "access_denied"
+          ? "?error=google_access_denied"
+          : "?error=google_oauth_failed",
+      );
     }
 
-    if (stateUserId !== user.id) {
-      return redirectTo(req, "?error=state_user_mismatch");
+    if (!code) {
+      return redirectTo(
+        req,
+        "?error=missing_code",
+      );
     }
 
     const userId = user.id;
-    const email = user.email ?? "owner@example.com";
+    const email =
+      user.email ?? "owner@example.com";
 
     // 3) Exchange auth code for tokens
     const tokens = await exchangeCode(code);
@@ -103,9 +151,27 @@ export async function GET(req: NextRequest) {
 
     return redirectTo(req, "?connected=google");
   } catch (e: any) {
+    if (e instanceof Response) {
+      return redirectTo(
+        req,
+        e.status === 401
+          ? "?error=not_authenticated"
+          : e.status === 402
+            ? "?error=pro_required"
+            : "?error=oauth_failed",
+      );
+    }
+
     console.error("oauth callback failed:", e);
 
-    const msg = typeof e?.message === "string" ? e.message : "oauth_failed";
-    return redirectTo(req, `?error=${encodeURIComponent(msg.slice(0, 80))}`);
+    const msg =
+      typeof e?.message === "string"
+        ? e.message
+        : "oauth_failed";
+
+    return redirectTo(
+      req,
+      `?error=${encodeURIComponent(msg.slice(0, 80))}`,
+    );
   }
 }
