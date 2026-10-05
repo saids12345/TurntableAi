@@ -38,6 +38,35 @@ function determineMode(confidence: number, priority: number): ExecutionMode {
 }
 
 export function buildExecutionPlan(input: BuildExecutionInput): ExecutionResult {
+  if (
+    input.executiveAI?.decisionStatus ===
+    "insufficient_data"
+  ) {
+    const topTask: ExecutionTask = {
+      id: "collect-trusted-data",
+      title:
+        "Collect more trusted restaurant data",
+      description:
+        "Operational execution is paused until TurnTableAI has enough trusted evidence for a reliable recommendation.",
+      priority: 0,
+      mode: "monitor",
+      estimatedImpact: 0,
+      confidence: 0,
+      performanceProvenance: null,
+    };
+
+    return {
+      summary:
+        "Execution is paused because the current trusted restaurant data is insufficient.",
+      mode: "monitor",
+      topTask,
+      queue: [topTask],
+      performanceProvenance: null,
+      generatedAt:
+        new Date().toISOString(),
+    };
+  }
+
   const recommendation =
     input.executiveAI?.recommendation ?? "Review restaurant operations.";
 

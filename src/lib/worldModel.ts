@@ -1,4 +1,5 @@
 import type { PerformanceProvenance } from "@/lib/restaurantState";
+import type { RestaurantDataReadiness } from "@/lib/restaurantDataReadiness";
 
 type PerformanceProvenancePair = {
   latest: PerformanceProvenance | null;
@@ -19,6 +20,7 @@ export type WorldSignalType =
 
 export type WorldModelContext = {
   locationName?: string | null;
+  dataReadiness?: RestaurantDataReadiness | null;
   now?: Date | string | null;
   dayOfWeek?: number | null;
   month?: number | null;
@@ -120,10 +122,46 @@ function buildSignal(params: {
 }
 
 export function buildWorldModel(context: WorldModelContext): WorldModelResult {
+  const locationName =
+    context.locationName ??
+    null;
+
+  const readiness =
+    context.dataReadiness?.status ??
+    "ready";
+
+  if (readiness !== "ready") {
+    return {
+      ok: true,
+      locationName,
+      performanceProvenance:
+        context.performanceProvenance ??
+        null,
+      summary:
+        readiness === "insufficient"
+          ? `World Model adjustments are paused for ${locationName ?? "the restaurant"} because TurnTableAI does not yet have enough trusted restaurant data.`
+          : `World Model adjustments are paused for ${locationName ?? "the restaurant"} until another trusted POS snapshot is available for comparison.`,
+      externalPressureScore: 0,
+      demandModifierPct: 0,
+      laborModifierPct: 0,
+      marginRiskModifierPct: 0,
+      deliveryPressure: "low",
+      signals: [],
+      assumptions: [
+        "No restaurant-specific world adjustment was applied because trusted data readiness is incomplete.",
+      ],
+      generatedAt:
+        new Date().toISOString(),
+    };
+  }
+
   const date = toDate(context.now);
-  const dayOfWeek = context.dayOfWeek ?? date.getDay();
-  const month = context.month ?? date.getMonth() + 1;
-  const locationName = context.locationName ?? null;
+  const dayOfWeek =
+    context.dayOfWeek ??
+    date.getDay();
+  const month =
+    context.month ??
+    date.getMonth() + 1;
 
   const demand = safeNumber(context.demandScore, 70);
   const operations = safeNumber(context.operationsScore, 70);

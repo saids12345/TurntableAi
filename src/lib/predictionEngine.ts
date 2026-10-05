@@ -1,4 +1,5 @@
 import type { PerformanceProvenance } from "@/lib/restaurantState";
+import type { RestaurantDataReadiness } from "@/lib/restaurantDataReadiness";
 
 type PerformanceProvenancePair = {
   latest: PerformanceProvenance | null;
@@ -39,6 +40,7 @@ export type PredictionMetrics = {
 
 export type PredictionContext = {
   locationName?: string | null;
+  dataReadiness?: RestaurantDataReadiness | null;
   overallScore?: number | null;
   level?: string | null;
   scores?: PredictionStateScores | null;
@@ -364,7 +366,36 @@ export function predictRestaurantFuture(params: {
   horizon?: PredictionHorizon;
 }): PredictionResult {
   const horizon = params.horizon ?? "next_14_days";
-  const prediction = buildPrediction(params.context, horizon);
+
+  const readiness =
+    params.context.dataReadiness?.status ??
+    "ready";
+
+  if (readiness !== "ready") {
+    const locationName =
+      params.context.locationName ??
+      "the restaurant";
+
+    return {
+      ok: true,
+      mode: "single_location",
+      horizon,
+      summary:
+        readiness === "insufficient"
+          ? `Prediction is paused for ${locationName} because TurnTableAI does not yet have enough trusted restaurant data.`
+          : `Prediction is paused for ${locationName} until another trusted POS snapshot is available for comparison.`,
+      topPrediction: null,
+      predictions: [],
+      generatedAt:
+        new Date().toISOString(),
+    };
+  }
+
+  const prediction =
+    buildPrediction(
+      params.context,
+      horizon,
+    );
 
   return {
     ok: true,
@@ -382,7 +413,17 @@ export function predictNetworkFuture(params: {
   horizon?: PredictionHorizon;
 }): PredictionResult {
   const horizon = params.horizon ?? "next_14_days";
-  const predictions = params.contexts
+
+  const readyContexts =
+    params.contexts.filter(
+      (context) =>
+        (
+          context.dataReadiness?.status ??
+          "ready"
+        ) === "ready",
+    );
+
+  const predictions = readyContexts
     .map((context) => buildPrediction(context, horizon))
     .sort((a, b) => {
       const riskOrder: Record<PredictionRiskLevel, number> = {

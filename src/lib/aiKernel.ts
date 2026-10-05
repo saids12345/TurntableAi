@@ -1,5 +1,8 @@
 import { getRestaurantStates } from "@/lib/restaurantState";
 import {
+  filterReadyRestaurantData,
+} from "@/lib/restaurantDataReadiness";
+import {
   createNetworkPlanningResult,
   createPlanningResult,
   type PlanningHorizon,
@@ -19,6 +22,9 @@ import { buildExecutionPlan } from "@/lib/executionEngine";
 import {
   buildSituationAssessment,
 } from "@/lib/brain/situationAssessment";
+import {
+  buildWorldState,
+} from "@/lib/brain/perception/worldState";
 
 import {
   operatorMemoryService,
@@ -115,7 +121,9 @@ export type AIKernelMemoryContext = {
   error: string | null;
 };
 export type AIKernelLearningState = {
-  status: "awaiting_execution_outcome";
+  status:
+    | "awaiting_execution_outcome"
+    | "blocked_insufficient_data";
 
   message: string;
 };
@@ -344,6 +352,7 @@ function buildPlanningContexts(
 ) {
   return states.map((state) => ({
     locationName: state.locationName,
+    dataReadiness: state.dataReadiness,
     health: state.level,
     scores: state.scores,
     revenue: state.metrics.revenue,
@@ -370,6 +379,7 @@ function buildCausalAndPredictionContexts(
 ) {
   return states.map((state) => ({
     locationName: state.locationName,
+    dataReadiness: state.dataReadiness,
     overallScore: state.overallScore,
     level: state.level,
     scores: state.scores,
@@ -403,6 +413,7 @@ function buildWorldContexts(
 ) {
   return states.map((state) => ({
     locationName: state.locationName,
+    dataReadiness: state.dataReadiness,
     revenue: state.metrics.revenue,
     orders: state.metrics.orders,
     refunds: state.metrics.refunds,
@@ -622,6 +633,22 @@ export async function runAIKernel(
     input,
   );
 
+  /*
+   * Cognitive reasoning must only consume restaurant
+   * states backed by enough trusted current evidence.
+   *
+   * Low-readiness states remain available in the API
+   * result for visibility, but they cannot drive Brain
+   * reasoning, memory reuse, or persisted belief updates.
+   */
+  const cognitiveRestaurantStates =
+    filterReadyRestaurantData(
+      restaurantStates,
+    );
+
+  const hasReadyCognitiveData =
+    cognitiveRestaurantStates.length > 0;
+
   const beliefPersistenceEnabled =
   input.beliefPersistenceMode !==
   "disabled";
@@ -650,7 +677,8 @@ const beliefLocationName =
  * prevent the Brain itself from operating.
  */
 if (
-  beliefPersistenceEnabled
+  beliefPersistenceEnabled &&
+  hasReadyCognitiveData
 ) {
   try {
     const persistedBeliefState =
@@ -708,7 +736,7 @@ if (
 
   const situationAssessment =
     buildSituationAssessment(
-      restaurantStates,
+      cognitiveRestaurantStates,
     );
 
   const planning =
@@ -828,7 +856,22 @@ try {
    */
   brainContext.perception
     .restaurantState =
-    restaurantStates;
+    cognitiveRestaurantStates;
+
+  brainContext.perception
+    .worldState =
+    buildWorldState({
+      restaurantStates:
+        cognitiveRestaurantStates,
+
+      locationNames:
+        cognitiveRestaurantStates.map(
+          (state) =>
+            state.locationName,
+        ),
+
+      mode,
+    });
 
   brainContext.perception
     .situationAssessment =
@@ -846,6 +889,7 @@ try {
  * experience participating in reasoning.
  */
 const cognitiveOperatorMemory =
+  !hasReadyCognitiveData ||
   input.memoryMode === "excluded"
     ? null
     : memory;
@@ -877,9 +921,11 @@ brainContext.knowledge
    * its evidence sources have been hydrated.
    */
   const cognitiveContext =
-    await runBrain(
-      brainContext,
-    );
+    hasReadyCognitiveData
+      ? await runBrain(
+          brainContext,
+        )
+      : brainContext;
 
   /*
    * Re-pin externally loaded knowledge after the Brain run.
@@ -899,7 +945,7 @@ brainContext.knowledge
 
   const similarityContext =
     getSimilarityContext(
-      restaurantStates,
+      cognitiveRestaurantStates,
     );
 
   const executiveAI =
@@ -961,22 +1007,26 @@ brainContext.knowledge
       executionPlan,
 
       operatorMemory:
-        memory.recentMemories,
+        cognitiveOperatorMemory
+          ?.recentMemories ??
+        [],
 
       restaurantState:
-        restaurantStates.length ===
+        cognitiveRestaurantStates.length ===
         1
-          ? restaurantStates[0]
+          ? cognitiveRestaurantStates[0]
           : undefined,
 
-      restaurantStates,
+      restaurantStates:
+        cognitiveRestaurantStates,
     });
 
   const operatorIntelligence =
     buildOperatorIntelligence({
       mode,
 
-      restaurantStates,
+      restaurantStates:
+        cognitiveRestaurantStates,
 
       memory,
 
@@ -999,7 +1049,9 @@ brainContext.knowledge
       input.actionId ?? null,
 
     cognition:
-      cognitiveContext.reasoning,
+      hasReadyCognitiveData
+        ? cognitiveContext.reasoning
+        : null,
 
     operatorIntelligence,
 
@@ -1057,6 +1109,7 @@ const revisedBeliefSystem =
 
 if (
   beliefPersistenceEnabled &&
+  hasReadyCognitiveData &&
   revisedBeliefSystem &&
   revisedBeliefSystem
     .beliefs.length > 0
@@ -1132,13 +1185,24 @@ planning,
 
     operatorWorkflow,
 
-    learning: {
-      status:
-        "awaiting_execution_outcome",
+    learning:
+      hasReadyCognitiveData &&
+      executiveAI.decisionStatus ===
+        "actionable"
+        ? {
+            status:
+              "awaiting_execution_outcome",
 
-      message:
-       "Outcome Learning is ready. After this action is executed, POST its actionId to /api/operator-memory/learn so measured outcomes enrich the original Cognitive memory.",
-    },
+            message:
+              "Outcome Learning is ready. After this action is executed, POST its actionId to /api/operator-memory/learn so measured outcomes enrich the original Cognitive memory.",
+          }
+        : {
+            status:
+              "blocked_insufficient_data",
+
+            message:
+              "Outcome Learning is paused because TurnTableAI does not yet have enough trusted restaurant data for an operating action.",
+          },
 
     pipeline: {
       restaurantStateLoaded:
@@ -1222,12 +1286,15 @@ planning,
         ),
 
       brainRunCompleted:
+        hasReadyCognitiveData &&
         cognition.metadata
           .status ===
         "completed",
 
       outcomeLearningReady:
-        true,
+        hasReadyCognitiveData &&
+        executiveAI.decisionStatus ===
+          "actionable",
     },
 
     generatedAt:

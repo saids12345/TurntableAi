@@ -1,4 +1,5 @@
 import type { PerformanceProvenance } from "@/lib/restaurantState";
+import type { RestaurantDataReadiness } from "@/lib/restaurantDataReadiness";
 
 type PerformanceProvenancePair = {
   latest: PerformanceProvenance | null;
@@ -49,6 +50,7 @@ export type CausalStateScores = {
 
 export type CausalContext = {
   locationName?: string | null;
+  dataReadiness?: RestaurantDataReadiness | null;
   overallScore?: number | null;
   level?: string | null;
   scores?: CausalStateScores | null;
@@ -413,7 +415,22 @@ export function analyzeRestaurantCausality(context: CausalContext): CausalHypoth
 }
 
 export function analyzeNetworkCausality(contexts: CausalContext[]): CausalAnalysisResult {
-  const all = contexts.flatMap((context) => analyzeRestaurantCausality(context));
+  const readyContexts =
+    contexts.filter(
+      (context) =>
+        (
+          context.dataReadiness?.status ??
+          "ready"
+        ) === "ready",
+    );
+
+  const all =
+    readyContexts.flatMap(
+      (context) =>
+        analyzeRestaurantCausality(
+          context,
+        ),
+    );
   const sorted = all.sort((a, b) => b.confidenceScore - a.confidenceScore);
   const top = sorted[0] ?? null;
 
@@ -439,8 +456,37 @@ export function analyzeNetworkCausality(contexts: CausalContext[]): CausalAnalys
 }
 
 export function analyzeSingleRestaurantCausality(context: CausalContext): CausalAnalysisResult {
-  const hypotheses = analyzeRestaurantCausality(context);
-  const top = hypotheses[0] ?? null;
+  const readiness =
+    context.dataReadiness?.status ??
+    "ready";
+
+  if (readiness !== "ready") {
+    const locationName =
+      context.locationName ??
+      "the restaurant";
+
+    return {
+      ok: true,
+      mode: "single_location",
+      summary:
+        readiness === "insufficient"
+          ? `Causal analysis is paused for ${locationName} because TurnTableAI does not yet have enough trusted restaurant data.`
+          : `Causal analysis is paused for ${locationName} until another trusted POS snapshot is available for comparison.`,
+      topHypothesis: null,
+      hypotheses: [],
+      generatedAt:
+        new Date().toISOString(),
+    };
+  }
+
+  const hypotheses =
+    analyzeRestaurantCausality(
+      context,
+    );
+
+  const top =
+    hypotheses[0] ??
+    null;
 
   return {
     ok: true,
