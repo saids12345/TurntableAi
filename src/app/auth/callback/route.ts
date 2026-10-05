@@ -2,11 +2,16 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { sanitizeInternalPath } from "@/lib/safeInternalPath";
 
 export async function GET(req: Request) {
   const { searchParams, origin } = new URL(req.url);
   const code = searchParams.get("code");
-  const redirect = searchParams.get("redirect") ?? "/billing";
+  const redirect =
+    sanitizeInternalPath(
+      searchParams.get("redirect"),
+      "/billing",
+    );
 
   const cookieStore = await cookies();
 

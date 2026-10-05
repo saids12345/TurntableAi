@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 import { runAIKernel } from "@/lib/aiKernel";
 import {
   buildDecisionChangeProvenance,
@@ -1003,6 +1004,8 @@ function buildAutoAction(
 }
 
 export async function POST(request: Request) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
     const {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 import { runAIKernel } from "@/lib/aiKernel";
 import type { PlanningHorizon } from "@/lib/planningEngine";
 import type { PredictionHorizon } from "@/lib/predictionEngine";
@@ -30,6 +31,8 @@ function getLookbackDays(value: string | null) {
 }
 
 export async function GET(request: Request) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 

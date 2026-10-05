@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import { sanitizeInternalPath } from "@/lib/safeInternalPath";
 
 type Mode = "signin" | "signup";
 
@@ -21,10 +22,14 @@ export default function LoginPage() {
     // supports /login?redirect=/reviews OR /login?redirect=/billing?next=%2Freviews
     try {
       const params = new URLSearchParams(window.location.search);
-      const redirectParam = params.get("redirect");
-      if (redirectParam && redirectParam.startsWith("/")) return redirectParam;
-    } catch {}
-    return "/billing";
+
+      return sanitizeInternalPath(
+        params.get("redirect"),
+        "/billing",
+      );
+    } catch {
+      return "/billing";
+    }
   }
 
   function getAuthCallbackUrl(nextPath: string) {

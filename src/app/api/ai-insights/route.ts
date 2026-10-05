@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -447,6 +448,8 @@ async function getAuthenticatedUserId() {
 }
 
 export async function GET() {
+  await requireProForApi();
+
   const userId = await getAuthenticatedUserId();
 
   let liveSignals: LocationSignal[] = [];

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 import { getRestaurantStates } from "@/lib/restaurantState";
 import { createNetworkPlanningResult, createPlanningResult } from "@/lib/planningEngine";
 import { analyzeNetworkCausality, analyzeSingleRestaurantCausality } from "@/lib/causalEngine";
@@ -22,6 +23,8 @@ function getTopWorldSignal(worldModel: any) {
 }
 
 export async function GET(request: Request) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 

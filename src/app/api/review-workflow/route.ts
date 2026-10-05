@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,8 @@ function normalizeStatus(value: unknown): ReviewWorkflowStatus {
 }
 
 export async function GET() {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 
@@ -71,6 +74,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  await requireProForApi();
+
   try {
     const supabase = await getSupabaseRouteClient();
 

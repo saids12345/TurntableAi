@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { runAIKernel } from "@/lib/aiKernel";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
+import { requireProForApi } from "@/lib/requirePro";
 import {
   buildProvisionalMemoryEvidence,
 } from "@/lib/operatorMemoryTrust";
@@ -274,6 +275,8 @@ function getEvidenceHistory(
 export async function POST(
   request: Request,
 ) {
+  await requireProForApi();
+
   try {
     const supabase =
       await getSupabaseRouteClient();

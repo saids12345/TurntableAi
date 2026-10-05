@@ -1,5 +1,9 @@
 // src/lib/store.ts
 import { supabaseServer } from "./supabase";
+import {
+  decryptIntegrationToken,
+  encryptIntegrationToken,
+} from "./integrationTokenCrypto";
 
 /* ============================================================================
    Types
@@ -11,6 +15,110 @@ export type ProviderTokens = {
   refresh_token?: string;
   expiry_date?: number;
 };
+
+function decodeStoredToken(
+  value: unknown,
+): string | undefined {
+  if (
+    typeof value !== "string" ||
+    !value
+  ) {
+    return undefined;
+  }
+
+  if (!value.startsWith("v1.")) {
+    return value;
+  }
+
+  return decryptIntegrationToken(
+    value,
+  );
+}
+
+function encryptProviderTokens(
+  tokens: ProviderTokens,
+) {
+  return {
+    access_token:
+      encryptIntegrationToken(
+        tokens.access_token,
+      ),
+
+    refresh_token:
+      tokens.refresh_token
+        ? encryptIntegrationToken(
+            tokens.refresh_token,
+          )
+        : undefined,
+
+    expiry_date:
+      tokens.expiry_date,
+  };
+}
+
+function decodeProviderTokens(
+  value: unknown,
+): ProviderTokens {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    throw new Error(
+      "Invalid stored Google token payload.",
+    );
+  }
+
+  const stored =
+    value as Record<
+      string,
+      unknown
+    >;
+
+  const accessToken =
+    decodeStoredToken(
+      stored.access_token,
+    );
+
+  if (!accessToken) {
+    throw new Error(
+      "Stored Google connection is missing access_token.",
+    );
+  }
+
+  const refreshToken =
+    decodeStoredToken(
+      stored.refresh_token,
+    );
+
+  const expiryDate =
+    typeof stored.expiry_date ===
+      "number" &&
+    Number.isFinite(
+      stored.expiry_date,
+    )
+      ? stored.expiry_date
+      : undefined;
+
+  return {
+    access_token:
+      accessToken,
+
+    ...(refreshToken
+      ? {
+          refresh_token:
+            refreshToken,
+        }
+      : {}),
+
+    ...(expiryDate !== undefined
+      ? {
+          expiry_date:
+            expiryDate,
+        }
+      : {}),
+  };
+}
 
 export type GoogleConn = {
   id: string;
@@ -42,6 +150,11 @@ export async function upsertConn(input: {
 }) {
   const db = supabaseServer();
 
+  const storedTokens =
+    encryptProviderTokens(
+      input.tokens,
+    );
+
   // Do we already have a google connection for this user?
   const existing = await db
     .from("review_connections")
@@ -63,7 +176,7 @@ export async function upsertConn(input: {
       .update({
         email: input.email,
         account_name: input.accountName ?? null,
-        tokens: input.tokens,
+        tokens: storedTokens,
         last_seen_by_location: input.lastSeenByLocation ?? {},
         updated_at: new Date().toISOString(),
       })
@@ -88,7 +201,7 @@ export async function upsertConn(input: {
         email: input.email,
         provider: "google",
         account_name: input.accountName ?? null,
-        tokens: input.tokens,
+        tokens: storedTokens,
         last_seen_by_location: input.lastSeenByLocation ?? {},
       })
       .select("id")
@@ -142,7 +255,9 @@ export async function getConnByUser(
     userId: c.user_id,
     email: c.email,
     accountName: c.account_name ?? undefined,
-    tokens: c.tokens as ProviderTokens,
+    tokens: decodeProviderTokens(
+      c.tokens,
+    ),
     lastSeenByLocation: c.last_seen_by_location ?? {},
     locations: (c.review_locations || []).map((l: any) => ({
       id: l.id,
@@ -173,7 +288,9 @@ export async function getAllGoogleConns(): Promise<GoogleConn[]> {
     userId: c.user_id,
     email: c.email,
     accountName: c.account_name ?? undefined,
-    tokens: c.tokens as ProviderTokens,
+    tokens: decodeProviderTokens(
+      c.tokens,
+    ),
     lastSeenByLocation: c.last_seen_by_location ?? {},
     locations: (c.review_locations || []).map((l: any) => ({
       id: l.id,
