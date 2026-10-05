@@ -52,6 +52,7 @@ export async function GET(request: Request) {
 
     const contexts = states.map((state) => ({
       locationName: state.locationName,
+      dataReadiness: state.dataReadiness,
       overallScore: state.overallScore,
       level: state.level,
       scores: state.scores,
@@ -101,6 +102,7 @@ export async function GET(request: Request) {
     const worldModel = buildNetworkWorldModel(
       states.map((state) => ({
         locationName: state.locationName,
+        dataReadiness: state.dataReadiness,
         revenue: state.metrics.revenue,
         orders: state.metrics.orders,
         refunds: state.metrics.refunds,

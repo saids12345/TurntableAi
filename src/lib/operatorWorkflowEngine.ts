@@ -421,6 +421,10 @@ export type BuildWorkflowInput = {
   } | null;
 
   executiveAI?: {
+    decisionStatus?:
+      | "actionable"
+      | "insufficient_data"
+      | null;
     headline?: string | null;
     recommendation?: string | null;
     riskLevel?: string | null;
@@ -2511,6 +2515,111 @@ export function buildOperatorWorkflow(
   input: BuildWorkflowInput,
 ): OperatorWorkflow {
   const workflowId = generateId("operator_workflow");
+
+  if (
+    input.executiveAI?.decisionStatus ===
+    "insufficient_data"
+  ) {
+    return {
+      id: workflowId,
+
+      type:
+        "evidence_investigation",
+
+      title:
+        "Trusted restaurant data required",
+
+      description:
+        "TurnTableAI has paused operating execution until enough trusted restaurant evidence is available.",
+
+      locationName:
+        null,
+
+      status:
+        "paused",
+
+      priority:
+        "low",
+
+      executionMode:
+        "monitor",
+
+      requiresApproval:
+        false,
+
+      autoExecutable:
+        false,
+
+      authoritySafety: {
+        riskLevel:
+          "low",
+
+        reversibility:
+          "easy",
+
+        financialExposure:
+          "none",
+
+        customerFacing:
+          false,
+
+        legalOrComplianceImpact:
+          false,
+      },
+
+      confidence:
+        0,
+
+      estimatedImpact:
+        0,
+
+      currentStepId:
+        null,
+
+      steps: [],
+
+      successMetric:
+        input.executiveAI
+          .successMetric ??
+        "At least two trusted POS snapshots with enough measurable performance data are available.",
+
+      expectedOutcome:
+        "Enough trusted current evidence becomes available for TurnTableAI to safely resume restaurant reasoning.",
+
+      source: {
+        generatedBy:
+          "TurnTableAI",
+
+        executiveRecommendation:
+          input.executiveAI
+            .recommendation ??
+          null,
+
+        executionPlanSummary:
+          input.executionPlan
+            ?.summary ??
+          null,
+
+        riskLevel:
+          "low",
+
+        performanceProvenance:
+          null,
+      },
+
+      createdAt:
+        now(),
+
+      metadata: {
+        generatedFrom:
+          "data_readiness_gate",
+
+        dataReadinessBlocked:
+          true,
+      },
+    };
+  }
+
   const cognitiveWorkflow =
     buildCognitiveOperatorWorkflow(
       input,

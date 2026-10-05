@@ -1,4 +1,5 @@
 import type { PerformanceProvenance } from "@/lib/restaurantState";
+import type { RestaurantDataReadiness } from "@/lib/restaurantDataReadiness";
 
 type PerformanceProvenancePair = {
   latest: PerformanceProvenance | null;
@@ -38,6 +39,7 @@ export type PlanningContext = {
   averageOutcomeScore?: number | null;
   reusableLessons?: number | null;
   performanceProvenance?: PerformanceProvenancePair | null;
+  dataReadiness?: RestaurantDataReadiness | null;
 };
 
 export type PlannedMove = {
@@ -374,12 +376,36 @@ export function createPlanningResult(params: {
   horizon?: PlanningHorizon;
 }): PlanningResult {
   const horizon = params.horizon ?? "next_7_days";
+
+  const readiness =
+    params.context.dataReadiness?.status ??
+    "ready";
+
+  const locationText =
+    params.context.locationName
+      ? `${params.context.locationName}`
+      : "the restaurant";
+
+  if (readiness !== "ready") {
+    return {
+      ok: true,
+      horizon,
+      locationName:
+        params.context.locationName ??
+        null,
+      summary:
+        readiness === "insufficient"
+          ? `Planning is paused for ${locationText} because TurnTableAI does not yet have enough trusted restaurant data.`
+          : `Planning is paused for ${locationText} until another trusted POS snapshot is available for comparison.`,
+      topMove: null,
+      moves: [],
+      generatedAt:
+        new Date().toISOString(),
+    };
+  }
+
   const moves = buildPlanningCandidates(params.context);
   const topMove = moves[0] ?? null;
-
-  const locationText = params.context.locationName
-    ? `${params.context.locationName}`
-    : "the restaurant";
 
   const summary = topMove
     ? `The highest-priority move for ${locationText} is "${topMove.title}" with ${Math.round(

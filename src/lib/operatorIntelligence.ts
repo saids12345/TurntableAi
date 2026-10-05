@@ -127,6 +127,10 @@ export type OperatorIntelligenceInput = {
   } | null;
 
   executiveAI?: {
+    decisionStatus?:
+      | "actionable"
+      | "insufficient_data"
+      | null;
     headline?: string | null;
     recommendation?: string | null;
     riskLevel?: string | null;
@@ -390,6 +394,103 @@ export function buildOperatorIntelligence(
     input.worldModel?.topSignal?.signal ?? null;
   const executiveAI = input.executiveAI ?? null;
   const executionPlan = input.executionPlan ?? null;
+
+  if (
+    executiveAI?.decisionStatus ===
+    "insufficient_data"
+  ) {
+    const doNow =
+      executiveAI.doNext?.length
+        ? [...executiveAI.doNext]
+        : [
+            "Collect another trusted POS performance snapshot before making an operating recommendation.",
+          ];
+
+    return {
+      ok: true,
+      mode,
+
+      judgment:
+        "collect_more_evidence",
+
+      riskLevel:
+        "low",
+
+      confidence:
+        0,
+
+      headline:
+        compact(
+          executiveAI.headline,
+          "TurnTableAI needs more trusted restaurant data before committing to an operating decision.",
+        ),
+
+      situation:
+        "Current trusted restaurant evidence is not sufficient for an operating diagnosis.",
+
+      rootCause:
+        "No restaurant root cause is being asserted until trusted evidence is ready.",
+
+      likelyFuture:
+        "No restaurant performance forecast is being asserted until trusted evidence is ready.",
+
+      firstMove:
+        "Collect more trusted restaurant data.",
+
+      whyThisMove:
+        "This is an evidence-collection step, not an AI-directed operating recommendation.",
+
+      executionMode:
+        "Monitor",
+
+      executionWindow:
+        "Resume operating reasoning after the trusted-data readiness threshold is reached.",
+
+      doNow,
+
+      doNotDo: [
+        "Do not make an AI-directed operating change from incomplete restaurant evidence.",
+        "Do not reuse historical playbooks as a substitute for current trusted evidence.",
+      ],
+
+      watchNext: [],
+
+      evidence: [],
+
+      successMetric:
+        compact(
+          executiveAI.successMetric,
+          "At least two trusted POS snapshots with enough measurable performance data are available.",
+        ),
+
+      historicalExperience: {
+        used: false,
+        similarity: null,
+        action: null,
+        outcome: null,
+        lesson: null,
+        successScore: null,
+      },
+
+      dissent: {
+        strongestAlternativeExplanation:
+          "No operating explanation has been selected because current evidence is incomplete.",
+
+        whatWouldChangeTheDecision: [
+          "Trusted restaurant data reaches the ready threshold.",
+        ],
+      },
+
+      locationFocus:
+        null,
+
+      performanceProvenance:
+        null,
+
+      generatedAt:
+        new Date().toISOString(),
+    };
+  }
 
   const historicalMatch =
     executiveAI?.historicalMatch ?? null;

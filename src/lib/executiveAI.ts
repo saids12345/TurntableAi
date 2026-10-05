@@ -12,6 +12,9 @@ type PerformanceProvenancePair = {
 
 export type ExecutiveRiskLevel = "low" | "medium" | "high" | "critical";
 export type ExecutiveDecisionMode = "single_location" | "network";
+export type ExecutiveDecisionStatus =
+  | "actionable"
+  | "insufficient_data";
 
 export type ExecutiveMove = {
   title?: string;
@@ -90,6 +93,7 @@ export type ExecutiveAIInput = {
 export type ExecutiveAIResult = {
   ok: true;
   mode: ExecutiveDecisionMode;
+  decisionStatus: ExecutiveDecisionStatus;
 
   headline: string;
   recommendation: string;
@@ -249,6 +253,70 @@ export function buildExecutiveAI(
   const topPrediction = input.topPrediction ?? null;
   const topWorldSignal = input.topWorldSignal ?? null;
 
+  const hasCurrentEvidence =
+    Boolean(
+      topMove ||
+      topCause ||
+      topPrediction ||
+      topWorldSignal,
+    );
+
+  if (!hasCurrentEvidence) {
+    const evidenceMessages = [
+      input.planningSummary,
+      input.causalSummary,
+      input.predictionSummary,
+      input.worldSummary,
+    ].filter(
+      (value): value is string =>
+        typeof value === "string" &&
+        value.trim().length > 0,
+    );
+
+    return {
+      ok: true,
+      mode,
+      decisionStatus:
+        "insufficient_data",
+
+      headline:
+        "TurnTableAI needs more trusted restaurant data before making an executive recommendation.",
+
+      recommendation:
+        "Do not take an AI-directed operating action yet.",
+
+      riskLevel: "low",
+      confidence: 0,
+
+      whyNow:
+        evidenceMessages.length
+          ? evidenceMessages
+          : [
+              "The reasoning engines do not yet have enough trusted evidence for a reliable decision.",
+            ],
+
+      doNext: [
+        "Collect another trusted POS performance snapshot before generating an operating recommendation.",
+      ],
+
+      watchClosely: [],
+
+      successMetric:
+        "At least two trusted POS snapshots with enough measurable performance data are available.",
+
+      executiveSummary:
+        "TurnTableAI is intentionally withholding an operating recommendation because the current trusted evidence is insufficient.",
+
+      historicalMatch: null,
+      historicalExperienceUsed: false,
+
+      performanceProvenance: null,
+
+      generatedAt:
+        new Date().toISOString(),
+    };
+  }
+
   const performanceProvenance =
     topMove?.performanceProvenance ??
     topCause?.performanceProvenance ??
@@ -406,6 +474,7 @@ export function buildExecutiveAI(
   return {
     ok: true,
     mode,
+    decisionStatus: "actionable",
 
     headline,
     recommendation,

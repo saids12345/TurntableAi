@@ -1,4 +1,8 @@
 import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
+import {
+  getRestaurantDataReadiness,
+  type RestaurantDataReadiness,
+} from "@/lib/restaurantDataReadiness";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 
 export type RestaurantStateLevel = "excellent" | "healthy" | "watch" | "risk" | "critical";
@@ -34,6 +38,7 @@ export type RestaurantStateMetricSnapshot = {
   marginPct: number | null;
   refunds: number | null;
   avgRating: number | null;
+  reviewCount: number;
   reviewIssueCount: number;
   openAlerts: number;
   pendingActions: number;
@@ -52,6 +57,7 @@ export type RestaurantState = {
   level: RestaurantStateLevel;
   scores: RestaurantStateScores;
   metrics: RestaurantStateMetricSnapshot;
+  dataReadiness: RestaurantDataReadiness;
   primaryRisk: string;
   primaryOpportunity: string;
   executiveSummary: string;
@@ -377,6 +383,7 @@ function buildMetrics(params: {
     marginPct: asNumber(latest?.margin_pct),
     refunds: asNumber(latest?.refunds),
     avgRating,
+    reviewCount: scopedReviews.length,
     reviewIssueCount: scopedReviews.filter((row) => asNumber(row.rating) !== null && Number(row.rating) <= 3).length,
     openAlerts: scopedActions.filter((row) => (row.priority_score ?? 0) >= 75 && row.status !== "executed" && row.status !== "dismissed").length,
     pendingActions: scopedActions.filter((row) => row.status === "pending" || row.status === "approved").length,
@@ -409,6 +416,36 @@ function buildMetrics(params: {
 }
 
 export function computeRestaurantStateFromMetrics(locationName: string, metrics: RestaurantStateMetricSnapshot): RestaurantState {
+  const performanceMetricCount = [
+    metrics.revenue,
+    metrics.orders,
+    metrics.avgTicket,
+    metrics.laborPct,
+    metrics.marginPct,
+    metrics.refunds,
+  ].filter(
+    (value) =>
+      value !== null,
+  ).length;
+
+  const dataReadiness =
+    getRestaurantDataReadiness({
+      hasLatestTrustedPerformance:
+        Boolean(
+          metrics.latestPerformanceProvenance,
+        ),
+
+      hasPreviousTrustedPerformance:
+        Boolean(
+          metrics.previousPerformanceProvenance,
+        ),
+
+      performanceMetricCount,
+
+      hasReviewEvidence:
+        metrics.reviewCount > 0,
+    });
+
   const scores: RestaurantStateScores = {
     demand: scoreDemand(metrics),
     operations: scoreOperations(metrics),
@@ -431,6 +468,7 @@ export function computeRestaurantStateFromMetrics(locationName: string, metrics:
     level,
     scores,
     metrics,
+    dataReadiness,
     primaryRisk: titleCase(weakest),
     primaryOpportunity: titleCase(strongest),
     executiveSummary: buildSummary(locationName, overallScore, level, scores),
@@ -527,6 +565,7 @@ export async function getRestaurantState(params: {
     marginPct: null,
     refunds: null,
     avgRating: null,
+    reviewCount: 0,
     reviewIssueCount: 0,
     openAlerts: 0,
     pendingActions: 0,
@@ -573,6 +612,7 @@ export async function getRestaurantStateSummary(params: {
 export function restaurantStateToPlanningContext(state: RestaurantState) {
   return {
     locationName: state.locationName,
+    dataReadiness: state.dataReadiness,
     health:
       state.level === "critical" || state.level === "risk"
         ? "risk"

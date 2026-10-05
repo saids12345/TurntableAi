@@ -46,6 +46,7 @@ export async function GET(request: Request) {
 
     const contexts = states.map((state) => ({
       locationName: state.locationName,
+      dataReadiness: state.dataReadiness,
       health: state.level,
       scores: state.scores,
       revenue: state.metrics.revenue,
