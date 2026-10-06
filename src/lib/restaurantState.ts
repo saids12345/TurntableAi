@@ -652,6 +652,33 @@ export function toTrustedRestaurantStateView(
   };
 }
 
+export function resolveRestaurantStateLocationNames(
+  discoveredLocationNames: string[],
+  requestedLocationName?: string | null,
+): string[] {
+  const discovered =
+    Array.from(
+      new Set(
+        discoveredLocationNames
+          .map((name) => name.trim())
+          .filter(Boolean),
+      ),
+    );
+
+  if (discovered.length > 0) {
+    return discovered;
+  }
+
+  const requested =
+    typeof requestedLocationName === "string"
+      ? requestedLocationName.trim()
+      : "";
+
+  return requested
+    ? [requested]
+    : [];
+}
+
 export async function getRestaurantStates(params: {
   userId: string;
   locationName?: string | null;
@@ -711,7 +738,11 @@ export async function getRestaurantStates(params: {
     ),
   );
 
-  const names = locationNames.length ? locationNames : [locationName || "Default Location"];
+  const names =
+    resolveRestaurantStateLocationNames(
+      locationNames,
+      locationName,
+    );
 
   return names
     .map((name) => {
@@ -726,32 +757,22 @@ export async function getRestaurantState(params: {
   locationName?: string | null;
   lookbackDays?: number;
 }): Promise<RestaurantState> {
-  const states = await getRestaurantStates(params);
-  return states[0] ?? computeRestaurantStateFromMetrics(params.locationName || "Default Location", {
-    revenue: null,
-    previousRevenue: null,
-    revenueDeltaPct: null,
-    orders: null,
-    previousOrders: null,
-    ordersDeltaPct: null,
-    avgTicket: null,
-    laborPct: null,
-    marginPct: null,
-    refunds: null,
-    avgRating: null,
-    reviewCount: 0,
-    reviewIssueCount: 0,
-    openAlerts: 0,
-    pendingActions: 0,
-    executedActions: 0,
-    memoryLessons: 0,
-    reusableLessons: 0,
-    avgOutcomeScore: null,
-    sameSourcePerformanceSnapshotCount: 0,
-    latestPerformanceProvenance: null,
-    previousPerformanceProvenance: null,
-    capturedAt: null,
-  });
+  const states =
+    await getRestaurantStates(
+      params,
+    );
+
+  const state =
+    states[0] ??
+    null;
+
+  if (!state) {
+    throw new Error(
+      "Restaurant State unavailable: no restaurant location could be identified from trusted data.",
+    );
+  }
+
+  return state;
 }
 
 export async function getRestaurantStateSummary(params: {

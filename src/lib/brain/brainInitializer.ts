@@ -30,6 +30,14 @@ export interface BrainInitializationResult {
   memory: AIKernelMemoryContext;
 }
 
+export function resolveAIKernelMode(
+  restaurantStateCount: number,
+): AIKernelMode {
+  return restaurantStateCount === 1
+    ? "single_location"
+    : "network";
+}
+
 export async function initializeBrain(
   input: AIKernelInput,
 ): Promise<BrainInitializationResult> {
@@ -42,16 +50,10 @@ export async function initializeBrain(
         input.lookbackDays ?? 45,
     });
 
-  if (!restaurantStates.length) {
-    throw new Error(
-      "AI Kernel could not run because no restaurant states were available.",
+  const mode =
+    resolveAIKernelMode(
+      restaurantStates.length,
     );
-  }
-
-  const mode: AIKernelMode =
-    restaurantStates.length === 1
-      ? "single_location"
-      : "network";
 
       const context: BrainContext = {
         metadata: {

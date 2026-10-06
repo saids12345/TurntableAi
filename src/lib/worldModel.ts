@@ -455,6 +455,19 @@ export function buildWorldModel(context: WorldModelContext): WorldModelResult {
 }
 
 export function buildNetworkWorldModel(contexts: WorldModelContext[]) {
+  if (contexts.length === 0) {
+    return {
+      ok: true as const,
+      mode: "network" as const,
+      locationsModeled: 0,
+      summary:
+        "World Model is paused because no restaurant location could be identified from trusted data.",
+      topSignal: null,
+      locationModels: [],
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   const results = contexts.map((context) => buildWorldModel(context));
   const topSignal = results
     .flatMap((result) =>
