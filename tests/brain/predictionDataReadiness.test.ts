@@ -49,6 +49,9 @@ const readyContext = {
     reasons: [],
   },
   overallScore: 80,
+  metrics: {
+    sameSourcePerformanceSnapshotCount: 14,
+  },
   scores: {
     demand: 80,
     operations: 80,
@@ -68,6 +71,86 @@ const ready =
 
 assert.notEqual(
   ready.topPrediction,
+  null,
+);
+
+const tooShortFor24Hours =
+  predictRestaurantFuture({
+    context: {
+      ...readyContext,
+      metrics: {
+        sameSourcePerformanceSnapshotCount: 2,
+      },
+    },
+    horizon: "next_24_hours",
+  });
+
+assert.equal(
+  tooShortFor24Hours.topPrediction,
+  null,
+);
+
+const enoughFor24Hours =
+  predictRestaurantFuture({
+    context: {
+      ...readyContext,
+      metrics: {
+        sameSourcePerformanceSnapshotCount: 3,
+      },
+    },
+    horizon: "next_24_hours",
+  });
+
+assert.notEqual(
+  enoughFor24Hours.topPrediction,
+  null,
+);
+
+const tooShortFor7Days =
+  predictRestaurantFuture({
+    context: {
+      ...readyContext,
+      metrics: {
+        sameSourcePerformanceSnapshotCount: 6,
+      },
+    },
+    horizon: "next_7_days",
+  });
+
+assert.equal(
+  tooShortFor7Days.topPrediction,
+  null,
+);
+
+const enoughFor7Days =
+  predictRestaurantFuture({
+    context: {
+      ...readyContext,
+      metrics: {
+        sameSourcePerformanceSnapshotCount: 7,
+      },
+    },
+    horizon: "next_7_days",
+  });
+
+assert.notEqual(
+  enoughFor7Days.topPrediction,
+  null,
+);
+
+const tooShortFor14Days =
+  predictRestaurantFuture({
+    context: {
+      ...readyContext,
+      metrics: {
+        sameSourcePerformanceSnapshotCount: 13,
+      },
+    },
+    horizon: "next_14_days",
+  });
+
+assert.equal(
+  tooShortFor14Days.topPrediction,
   null,
 );
 

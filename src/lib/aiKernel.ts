@@ -398,6 +398,9 @@ function buildCausalAndPredictionContexts(
       openAlerts: state.metrics.openAlerts,
       pendingActions: state.metrics.pendingActions,
       avgOutcomeScore: state.metrics.avgOutcomeScore,
+      sameSourcePerformanceSnapshotCount:
+        state.metrics
+          .sameSourcePerformanceSnapshotCount,
       performanceProvenance: {
         latest: state.metrics.latestPerformanceProvenance,
         previous: state.metrics.previousPerformanceProvenance,

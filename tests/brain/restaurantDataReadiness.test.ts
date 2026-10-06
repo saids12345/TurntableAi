@@ -5,43 +5,101 @@ import {
   getRestaurantDataReadiness,
 } from "@/lib/restaurantDataReadiness";
 
-assert.equal(
-  getRestaurantDataReadiness({
-    hasLatestTrustedPerformance: false,
-    hasPreviousTrustedPerformance: false,
-    performanceMetricCount: 0,
+const NOW =
+  "2026-10-05T18:00:00.000Z";
+
+function readinessInput(
+  overrides: Partial<
+    Parameters<
+      typeof getRestaurantDataReadiness
+    >[0]
+  > = {},
+) {
+  return {
+    hasLatestTrustedPerformance: true,
+    hasPreviousTrustedPerformance: true,
+    performanceMetricCount: 3,
+    comparablePerformanceMetricCount: 2,
+    sameTrustedPerformanceSource: true,
+    latestPerformanceCapturedAt:
+      "2026-10-05T11:00:00.000Z",
+    previousPerformanceCapturedAt:
+      "2026-10-04T11:00:00.000Z",
     hasReviewEvidence: false,
-  }).status,
+    now: NOW,
+    ...overrides,
+  };
+}
+
+assert.equal(
+  getRestaurantDataReadiness(
+    readinessInput({
+      hasLatestTrustedPerformance: false,
+      hasPreviousTrustedPerformance: false,
+      performanceMetricCount: 0,
+      comparablePerformanceMetricCount: 0,
+      latestPerformanceCapturedAt: null,
+      previousPerformanceCapturedAt: null,
+    }),
+  ).status,
   "insufficient",
 );
 
 assert.equal(
-  getRestaurantDataReadiness({
-    hasLatestTrustedPerformance: true,
-    hasPreviousTrustedPerformance: false,
-    performanceMetricCount: 3,
-    hasReviewEvidence: false,
-  }).status,
+  getRestaurantDataReadiness(
+    readinessInput({
+      hasPreviousTrustedPerformance: false,
+      comparablePerformanceMetricCount: 0,
+      previousPerformanceCapturedAt: null,
+    }),
+  ).status,
   "partial",
 );
 
 assert.equal(
-  getRestaurantDataReadiness({
-    hasLatestTrustedPerformance: false,
-    hasPreviousTrustedPerformance: false,
-    performanceMetricCount: 0,
-    hasReviewEvidence: true,
-  }).status,
+  getRestaurantDataReadiness(
+    readinessInput({
+      comparablePerformanceMetricCount: 1,
+    }),
+  ).status,
   "partial",
 );
 
 assert.equal(
-  getRestaurantDataReadiness({
-    hasLatestTrustedPerformance: true,
-    hasPreviousTrustedPerformance: true,
-    performanceMetricCount: 3,
-    hasReviewEvidence: false,
-  }).status,
+  getRestaurantDataReadiness(
+    readinessInput({
+      sameTrustedPerformanceSource: false,
+    }),
+  ).status,
+  "partial",
+);
+
+assert.equal(
+  getRestaurantDataReadiness(
+    readinessInput({
+      latestPerformanceCapturedAt:
+        "2026-10-01T11:00:00.000Z",
+      previousPerformanceCapturedAt:
+        "2026-09-30T11:00:00.000Z",
+    }),
+  ).status,
+  "partial",
+);
+
+assert.equal(
+  getRestaurantDataReadiness(
+    readinessInput({
+      previousPerformanceCapturedAt:
+        "2026-09-30T11:00:00.000Z",
+    }),
+  ).status,
+  "partial",
+);
+
+assert.equal(
+  getRestaurantDataReadiness(
+    readinessInput(),
+  ).status,
   "ready",
 );
 
@@ -63,7 +121,7 @@ const cognitiveReady =
     },
     {
       id: "insufficient",
-     ataReadiness: {
+      dataReadiness: {
         status: "insufficient" as const,
         reasons: [],
       },
@@ -81,5 +139,5 @@ assert.deepEqual(
 );
 
 console.log(
-  "✓ Restaurant data readiness regression test passed",
+  "✓ Restaurant data readiness quality regression test passed",
 );
