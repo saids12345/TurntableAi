@@ -27,6 +27,7 @@ function baseMetrics():
     memoryLessons: 0,
     reusableLessons: 0,
     avgOutcomeScore: null,
+    sameSourcePerformanceSnapshotCount: 0,
     latestPerformanceProvenance: null,
     previousPerformanceProvenance: null,
     capturedAt: null,
@@ -47,24 +48,44 @@ assert.equal(
 const readyMetrics =
   baseMetrics();
 
+const latestCapturedAt =
+  new Date(
+    Date.now() -
+      6 *
+        60 *
+        60 *
+        1000,
+  ).toISOString();
+
+const previousCapturedAt =
+  new Date(
+    Date.now() -
+      30 *
+        60 *
+        60 *
+        1000,
+  ).toISOString();
+
 readyMetrics.revenue = 1000;
+readyMetrics.previousRevenue = 900;
 readyMetrics.orders = 50;
+readyMetrics.previousOrders = 45;
 readyMetrics.avgTicket = 20;
 
 readyMetrics.latestPerformanceProvenance = {
   rowId: "latest",
   sourceSystem: "square",
   sourceRecordId: "square-latest",
-  ingestedAt: "2026-10-05T12:00:00.000Z",
-  capturedAt: "2026-10-05T11:00:00.000Z",
+  ingestedAt: latestCapturedAt,
+  capturedAt: latestCapturedAt,
 };
 
 readyMetrics.previousPerformanceProvenance = {
   rowId: "previous",
   sourceSystem: "square",
   sourceRecordId: "square-previous",
-  ingestedAt: "2026-10-04T12:00:00.000Z",
-  capturedAt: "2026-10-04T11:00:00.000Z",
+  ingestedAt: previousCapturedAt,
+  capturedAt: previousCapturedAt,
 };
 
 const ready =

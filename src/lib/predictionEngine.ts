@@ -35,6 +35,7 @@ export type PredictionMetrics = {
   openAlerts?: number | null;
   pendingActions?: number | null;
   avgOutcomeScore?: number | null;
+  sameSourcePerformanceSnapshotCount?: number | null;
   performanceProvenance?: PerformanceProvenancePair | null;
 };
 
@@ -88,6 +89,38 @@ function clamp(value: number, min = 0, max = 100) {
 
 function safeNumber(value: number | null | undefined, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function requiredSnapshotsForHorizon(
+  horizon: PredictionHorizon,
+) {
+  if (horizon === "next_24_hours") {
+    return 3;
+  }
+
+  if (horizon === "next_7_days") {
+    return 7;
+  }
+
+  return 14;
+}
+
+function predictionSnapshotCount(
+  context: PredictionContext,
+) {
+  const value =
+    context.metrics
+      ?.sameSourcePerformanceSnapshotCount;
+
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0
+  ) {
+    return 0;
+  }
+
+  return Math.floor(value);
 }
 
 function round(value: number, decimals = 1) {
@@ -391,6 +424,37 @@ export function predictRestaurantFuture(params: {
     };
   }
 
+  const requiredSnapshots =
+    requiredSnapshotsForHorizon(
+      horizon,
+    );
+
+  const snapshotCount =
+    predictionSnapshotCount(
+      params.context,
+    );
+
+  if (
+    snapshotCount <
+    requiredSnapshots
+  ) {
+    const locationName =
+      params.context.locationName ??
+      "the restaurant";
+
+    return {
+      ok: true,
+      mode: "single_location",
+      horizon,
+      summary:
+        `Prediction is paused for ${locationName} because this horizon requires at least ${requiredSnapshots} trusted same-source performance snapshots. ${snapshotCount} are currently available.`,
+      topPrediction: null,
+      predictions: [],
+      generatedAt:
+        new Date().toISOString(),
+    };
+  }
+
   const prediction =
     buildPrediction(
       params.context,
@@ -414,6 +478,11 @@ export function predictNetworkFuture(params: {
 }): PredictionResult {
   const horizon = params.horizon ?? "next_14_days";
 
+  const requiredSnapshots =
+    requiredSnapshotsForHorizon(
+      horizon,
+    );
+
   const readyContexts =
     params.contexts.filter(
       (context) =>
@@ -423,7 +492,16 @@ export function predictNetworkFuture(params: {
         ) === "ready",
     );
 
-  const predictions = readyContexts
+  const predictionReadyContexts =
+    readyContexts.filter(
+      (context) =>
+        predictionSnapshotCount(
+          context,
+        ) >=
+        requiredSnapshots,
+    );
+
+  const predictions = predictionReadyContexts
     .map((context) => buildPrediction(context, horizon))
     .sort((a, b) => {
       const riskOrder: Record<PredictionRiskLevel, number> = {
@@ -448,7 +526,9 @@ export function predictNetworkFuture(params: {
     horizon,
     summary: topPrediction
       ? `The highest forecasted risk is at ${topPrediction.locationName || "the restaurant"}: ${topPrediction.prediction}`
-      : "No forecasted risk is strong enough yet.",
+      : readyContexts.length === 0
+        ? "Prediction is paused because no location currently meets trusted data-readiness requirements."
+        : `Prediction is paused because no ready location has the ${requiredSnapshots} trusted same-source performance snapshots required for this horizon.`,
     topPrediction,
     predictions,
     generatedAt: new Date().toISOString(),

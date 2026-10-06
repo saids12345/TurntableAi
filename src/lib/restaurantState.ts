@@ -46,6 +46,7 @@ export type RestaurantStateMetricSnapshot = {
   memoryLessons: number;
   reusableLessons: number;
   avgOutcomeScore: number | null;
+  sameSourcePerformanceSnapshotCount: number;
   latestPerformanceProvenance: PerformanceProvenance | null;
   previousPerformanceProvenance: PerformanceProvenance | null;
   capturedAt: string | null;
@@ -358,6 +359,27 @@ function buildMetrics(params: {
   const scopedMemory = memory.filter((row) => sameLocation(row.location_name, locationName));
   const { latest, previous } = latestTwo(scopedPerformance);
 
+  const latestSourceSystem =
+    latest?.source_system ??
+    null;
+
+  const sameSourcePerformanceSnapshotCount =
+    latestSourceSystem
+      ? new Set(
+          scopedPerformance
+            .filter(
+              (row) =>
+                row.source_system ===
+                  latestSourceSystem &&
+                row.captured_at !== null,
+            )
+            .map(
+              (row) =>
+                row.captured_at,
+            ),
+        ).size
+      : 0;
+
   const ratings = scopedReviews
     .map((row) => asNumber(row.rating))
     .filter((value): value is number => value !== null);
@@ -393,6 +415,7 @@ function buildMetrics(params: {
     avgOutcomeScore: outcomeScores.length
       ? round(outcomeScores.reduce((sum, value) => sum + value, 0) / outcomeScores.length, 1)
       : null,
+    sameSourcePerformanceSnapshotCount,
     latestPerformanceProvenance: latest
       ? {
           rowId: latest.id,
@@ -428,6 +451,37 @@ export function computeRestaurantStateFromMetrics(locationName: string, metrics:
       value !== null,
   ).length;
 
+  const comparablePerformanceMetricCount = [
+    [
+      metrics.revenue,
+      metrics.previousRevenue,
+    ],
+    [
+      metrics.orders,
+      metrics.previousOrders,
+    ],
+  ].filter(
+    ([current, previous]) =>
+      current !== null &&
+      previous !== null,
+  ).length;
+
+  const latestPerformanceProvenance =
+    metrics.latestPerformanceProvenance;
+
+  const previousPerformanceProvenance =
+    metrics.previousPerformanceProvenance;
+
+  const sameTrustedPerformanceSource =
+    Boolean(
+      latestPerformanceProvenance &&
+      previousPerformanceProvenance &&
+      latestPerformanceProvenance
+        .sourceSystem ===
+        previousPerformanceProvenance
+          .sourceSystem,
+    );
+
   const dataReadiness =
     getRestaurantDataReadiness({
       hasLatestTrustedPerformance:
@@ -441,6 +495,20 @@ export function computeRestaurantStateFromMetrics(locationName: string, metrics:
         ),
 
       performanceMetricCount,
+
+      comparablePerformanceMetricCount,
+
+      sameTrustedPerformanceSource,
+
+      latestPerformanceCapturedAt:
+        latestPerformanceProvenance
+          ?.capturedAt ??
+        null,
+
+      previousPerformanceCapturedAt:
+        previousPerformanceProvenance
+          ?.capturedAt ??
+        null,
 
       hasReviewEvidence:
         metrics.reviewCount > 0,
@@ -573,6 +641,7 @@ export async function getRestaurantState(params: {
     memoryLessons: 0,
     reusableLessons: 0,
     avgOutcomeScore: null,
+    sameSourcePerformanceSnapshotCount: 0,
     latestPerformanceProvenance: null,
     previousPerformanceProvenance: null,
     capturedAt: null,
