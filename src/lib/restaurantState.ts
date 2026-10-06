@@ -67,6 +67,22 @@ export type RestaurantState = {
   generatedAt: string;
 };
 
+export type TrustedRestaurantStateView =
+  Omit<
+    RestaurantState,
+    | "overallScore"
+    | "level"
+    | "scores"
+    | "primaryRisk"
+    | "primaryOpportunity"
+  > & {
+    overallScore: number | null;
+    level: RestaurantStateLevel | null;
+    scores: RestaurantStateScores | null;
+    primaryRisk: string | null;
+    primaryOpportunity: string | null;
+  };
+
 type PerformanceSignalRow = {
   id: string;
   user_id?: string | null;
@@ -543,6 +559,45 @@ export function computeRestaurantStateFromMetrics(locationName: string, metrics:
     diagnosis: buildDiagnosis(metrics, scores),
     recommendedFocus: buildRecommendedFocus(scores, metrics),
     generatedAt: new Date().toISOString(),
+  };
+}
+
+export function toTrustedRestaurantStateView(
+  state: RestaurantState,
+): TrustedRestaurantStateView {
+  if (
+    state.dataReadiness.status ===
+    "ready"
+  ) {
+    return state;
+  }
+
+  return {
+    ...state,
+
+    overallScore:
+      null,
+
+    level:
+      null,
+
+    scores:
+      null,
+
+    primaryRisk:
+      null,
+
+    primaryOpportunity:
+      null,
+
+    executiveSummary:
+      `TurnTableAI has not produced an operating assessment for ${state.locationName} because trusted restaurant data is not ready yet.`,
+
+    diagnosis:
+      [...state.dataReadiness.reasons],
+
+    recommendedFocus:
+      [],
   };
 }
 

@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { requireProForApi } from "@/lib/requirePro";
 import { runAIKernel } from "@/lib/aiKernel";
+import {
+  toTrustedRestaurantStateView,
+} from "@/lib/restaurantState";
 import type { PlanningHorizon } from "@/lib/planningEngine";
 import type { PredictionHorizon } from "@/lib/predictionEngine";
 
@@ -232,7 +235,15 @@ const kernel = await runAIKernel({
 
     return NextResponse.json({
       ok: true,
-      kernel,
+      kernel: {
+        ...kernel,
+
+        restaurantStates:
+          kernel.restaurantStates.map(
+            toTrustedRestaurantStateView,
+          ),
+      },
+
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { requireProForApi } from "@/lib/requirePro";
-import { getRestaurantStates } from "@/lib/restaurantState";
+import {
+  getRestaurantStates,
+  toTrustedRestaurantStateView,
+} from "@/lib/restaurantState";
 import { createNetworkPlanningResult, createPlanningResult } from "@/lib/planningEngine";
 
 export const runtime = "nodejs";
@@ -76,7 +79,10 @@ export async function GET(request: Request) {
       return NextResponse.json({
         ok: true,
         mode: "single_location",
-        restaurantState: states[0],
+        restaurantState:
+          toTrustedRestaurantStateView(
+            states[0],
+          ),
         planning: plan,
         generatedAt: new Date().toISOString(),
       });
@@ -90,7 +96,10 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       mode: "network",
-      restaurantStates: states,
+      restaurantStates:
+        states.map(
+          toTrustedRestaurantStateView,
+        ),
       planning: networkPlan,
       generatedAt: new Date().toISOString(),
     });
