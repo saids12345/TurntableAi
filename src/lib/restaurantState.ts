@@ -341,13 +341,64 @@ function buildSummary(locationName: string, overall: number, level: RestaurantSt
   return `${locationName} is currently in ${level} state with an operating score of ${overall}/100. The strongest dimension is ${titleCase(strongest)}, while the biggest watch area is ${titleCase(weakest)}.`;
 }
 
-async function safeSelect<T>(query: PromiseLike<{ data: unknown; error: { message?: string } | null }>, fallback: T[]) {
-  const { data, error } = await query;
-  if (error) {
-    console.warn("restaurantState select failed:", error.message);
-    return fallback;
+type RestaurantStateSelectError = {
+  message?: string;
+};
+
+export function requireRestaurantStateRows<T>(
+  result: {
+    data: unknown;
+    error: RestaurantStateSelectError | null;
+  },
+  source: string,
+): T[] {
+  if (result.error) {
+    throw new Error(
+      `Restaurant State data unavailable: ${source} could not be loaded.`,
+    );
   }
-  return (Array.isArray(data) ? data : fallback) as T[];
+
+  if (!Array.isArray(result.data)) {
+    throw new Error(
+      `Restaurant State data unavailable: ${source} returned an invalid response.`,
+    );
+  }
+
+  return result.data as T[];
+}
+
+async function safeSelect<T>(
+  query: PromiseLike<{
+    data: unknown;
+    error: RestaurantStateSelectError | null;
+  }>,
+  source: string,
+): Promise<T[]> {
+  const result = await query;
+
+  if (result.error) {
+    console.error(
+      "restaurantState select failed:",
+      {
+        source,
+        message:
+          result.error.message ??
+          "Unknown database error",
+      },
+    );
+  } else if (!Array.isArray(result.data)) {
+    console.error(
+      "restaurantState select returned invalid data:",
+      {
+        source,
+      },
+    );
+  }
+
+  return requireRestaurantStateRows<T>(
+    result,
+    source,
+  );
 }
 
 function latestTwo(rows: PerformanceSignalRow[]) {
@@ -618,7 +669,7 @@ export async function getRestaurantStates(params: {
       .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
       .gte("captured_at", sinceIso)
       .order("captured_at", { ascending: false }),
-    [],
+    "trusted performance",
   );
 
   const reviews = await safeSelect<ReviewRow>(
@@ -627,7 +678,7 @@ export async function getRestaurantStates(params: {
       .select("id, location_name, rating, update_time")
       .eq("user_id", userId)
       .gte("update_time", sinceIso),
-    [],
+    "reviews",
   );
 
   const actions = await safeSelect<AutoActionRow>(
@@ -636,7 +687,7 @@ export async function getRestaurantStates(params: {
       .select("id, location_name, action_type, status, priority_score, updated_at")
       .eq("user_id", userId)
       .gte("updated_at", sinceIso),
-    [],
+    "auto actions",
   );
 
   const memory = await safeSelect<OperatorMemoryRow>(
@@ -644,7 +695,7 @@ export async function getRestaurantStates(params: {
       .from("operator_memory")
       .select("id, location_name, action_type, confidence, outcome_score, reuse_recommended, status, updated_at")
       .eq("user_id", userId),
-    [],
+    "operator memory",
   );
 
   const locationNames = Array.from(
