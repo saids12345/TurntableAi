@@ -144,6 +144,51 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
+export type TrustedPerformanceMetric =
+  | "revenue"
+  | "orders"
+  | "avgTicket"
+  | "laborPct"
+  | "marginPct"
+  | "refunds";
+
+export function asTrustedPerformanceMetric(
+  value: unknown,
+  metric: TrustedPerformanceMetric,
+): number | null {
+  const numeric = asNumber(value);
+
+  if (numeric === null) {
+    return null;
+  }
+
+  if (metric === "orders") {
+    return Number.isSafeInteger(numeric) &&
+      numeric >= 0
+      ? numeric
+      : null;
+  }
+
+  if (
+    metric === "revenue" ||
+    metric === "avgTicket" ||
+    metric === "refunds" ||
+    metric === "laborPct"
+  ) {
+    return numeric >= 0
+      ? numeric
+      : null;
+  }
+
+  if (metric === "marginPct") {
+    return numeric <= 100
+      ? numeric
+      : null;
+  }
+
+  return null;
+}
+
 function pctDelta(previous: number | null, current: number | null) {
   if (previous === null || current === null || previous === 0) return null;
   return round(((current - previous) / previous) * 100, 2);
@@ -461,16 +506,68 @@ function buildMetrics(params: {
     .filter((value): value is number => value !== null);
 
   return {
-    revenue: asNumber(latest?.revenue),
-    previousRevenue: asNumber(previous?.revenue),
-    revenueDeltaPct: pctDelta(asNumber(previous?.revenue), asNumber(latest?.revenue)),
-    orders: asNumber(latest?.orders),
-    previousOrders: asNumber(previous?.orders),
-    ordersDeltaPct: pctDelta(asNumber(previous?.orders), asNumber(latest?.orders)),
-    avgTicket: asNumber(latest?.avg_ticket),
-    laborPct: asNumber(latest?.labor_pct),
-    marginPct: asNumber(latest?.margin_pct),
-    refunds: asNumber(latest?.refunds),
+    revenue:
+      asTrustedPerformanceMetric(
+        latest?.revenue,
+        "revenue",
+      ),
+    previousRevenue:
+      asTrustedPerformanceMetric(
+        previous?.revenue,
+        "revenue",
+      ),
+    revenueDeltaPct:
+      pctDelta(
+        asTrustedPerformanceMetric(
+          previous?.revenue,
+          "revenue",
+        ),
+        asTrustedPerformanceMetric(
+          latest?.revenue,
+          "revenue",
+        ),
+      ),
+    orders:
+      asTrustedPerformanceMetric(
+        latest?.orders,
+        "orders",
+      ),
+    previousOrders:
+      asTrustedPerformanceMetric(
+        previous?.orders,
+        "orders",
+      ),
+    ordersDeltaPct:
+      pctDelta(
+        asTrustedPerformanceMetric(
+          previous?.orders,
+          "orders",
+        ),
+        asTrustedPerformanceMetric(
+          latest?.orders,
+          "orders",
+        ),
+      ),
+    avgTicket:
+      asTrustedPerformanceMetric(
+        latest?.avg_ticket,
+        "avgTicket",
+      ),
+    laborPct:
+      asTrustedPerformanceMetric(
+        latest?.labor_pct,
+        "laborPct",
+      ),
+    marginPct:
+      asTrustedPerformanceMetric(
+        latest?.margin_pct,
+        "marginPct",
+      ),
+    refunds:
+      asTrustedPerformanceMetric(
+        latest?.refunds,
+        "refunds",
+      ),
     avgRating,
     reviewCount: scopedReviews.length,
     reviewIssueCount: scopedReviews.filter((row) => asNumber(row.rating) !== null && Number(row.rating) <= 3).length,
