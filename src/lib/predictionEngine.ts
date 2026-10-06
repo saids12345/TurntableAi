@@ -478,6 +478,19 @@ export function predictNetworkFuture(params: {
 }): PredictionResult {
   const horizon = params.horizon ?? "next_14_days";
 
+  if (params.contexts.length === 0) {
+    return {
+      ok: true,
+      mode: "network",
+      horizon,
+      summary:
+        "Prediction is paused because no restaurant location could be identified from trusted data.",
+      topPrediction: null,
+      predictions: [],
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   const requiredSnapshots =
     requiredSnapshotsForHorizon(
       horizon,

@@ -430,6 +430,20 @@ export function createNetworkPlanningResult(params: {
 }) {
   const horizon = params.horizon ?? "next_7_days";
 
+  if (params.contexts.length === 0) {
+    return {
+      ok: true as const,
+      horizon,
+      locationsPlanned: 0,
+      summary:
+        "Planning is paused because no restaurant location could be identified from trusted data.",
+      topMove: null,
+      moves: [],
+      locationPlans: [],
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   const locationPlans = params.contexts.map((context) =>
     createPlanningResult({ context, horizon }),
   );

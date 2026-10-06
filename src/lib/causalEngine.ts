@@ -415,6 +415,18 @@ export function analyzeRestaurantCausality(context: CausalContext): CausalHypoth
 }
 
 export function analyzeNetworkCausality(contexts: CausalContext[]): CausalAnalysisResult {
+  if (contexts.length === 0) {
+    return {
+      ok: true,
+      mode: "network",
+      summary:
+        "Causal analysis is paused because no restaurant location could be identified from trusted data.",
+      topHypothesis: null,
+      hypotheses: [],
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   const readyContexts =
     contexts.filter(
       (context) =>
