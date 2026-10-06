@@ -5,7 +5,7 @@ import { z } from "zod";
 import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
-const performanceSignalSchema = z
+export const performanceSignalSchema = z
   .object({
     userId: z.string().uuid(),
 
@@ -49,12 +49,14 @@ const performanceSignalSchema = z
     laborPct: z
       .number()
       .finite()
+      .nonnegative()
       .nullable()
       .optional(),
 
     marginPct: z
       .number()
       .finite()
+      .max(100)
       .nullable()
       .optional(),
 
