@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { requireProForApi } from "@/lib/requirePro";
-import { getRestaurantStates } from "@/lib/restaurantState";
+import {
+  getRestaurantStates,
+  toTrustedRestaurantStateView,
+} from "@/lib/restaurantState";
 import { buildNetworkWorldModel } from "@/lib/worldModel";
 
 export const runtime = "nodejs";
@@ -61,7 +64,10 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       mode: contexts.length === 1 ? "single_location" : "network",
-      restaurantStates: states,
+      restaurantStates:
+        states.map(
+          toTrustedRestaurantStateView,
+        ),
       worldModel,
       generatedAt: new Date().toISOString(),
     });

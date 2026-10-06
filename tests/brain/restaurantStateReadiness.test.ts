@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   computeRestaurantStateFromMetrics,
+  toTrustedRestaurantStateView,
   type RestaurantStateMetricSnapshot,
 } from "@/lib/restaurantState";
 
@@ -43,6 +44,46 @@ const insufficient =
 assert.equal(
   insufficient.dataReadiness.status,
   "insufficient",
+);
+
+const insufficientView =
+  toTrustedRestaurantStateView(
+    insufficient,
+  );
+
+assert.equal(
+  insufficientView.overallScore,
+  null,
+);
+
+assert.equal(
+  insufficientView.level,
+  null,
+);
+
+assert.equal(
+  insufficientView.scores,
+  null,
+);
+
+assert.equal(
+  insufficientView.primaryRisk,
+  null,
+);
+
+assert.equal(
+  insufficientView.primaryOpportunity,
+  null,
+);
+
+assert.deepEqual(
+  insufficientView.diagnosis,
+  insufficient.dataReadiness.reasons,
+);
+
+assert.equal(
+  insufficientView.recommendedFocus.length,
+  0,
 );
 
 const readyMetrics =
@@ -97,6 +138,36 @@ const ready =
 assert.equal(
   ready.dataReadiness.status,
   "ready",
+);
+
+const readyView =
+  toTrustedRestaurantStateView(
+    ready,
+  );
+
+assert.equal(
+  readyView.overallScore,
+  ready.overallScore,
+);
+
+assert.equal(
+  readyView.level,
+  ready.level,
+);
+
+assert.deepEqual(
+  readyView.scores,
+  ready.scores,
+);
+
+assert.equal(
+  readyView.primaryRisk,
+  ready.primaryRisk,
+);
+
+assert.equal(
+  readyView.primaryOpportunity,
+  ready.primaryOpportunity,
 );
 
 console.log(
