@@ -25,7 +25,15 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 401 });
+      console.error(
+        "prediction-engine/run auth error:",
+        authError,
+      );
+
+      return NextResponse.json(
+        { error: "Authentication failed" },
+        { status: 401 },
+      );
     }
 
     if (!user) {
@@ -100,10 +108,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `Prediction engine failed: ${error.message}`
-            : "Prediction engine failed",
+        error: "Prediction engine failed",
       },
       { status: 500 },
     );

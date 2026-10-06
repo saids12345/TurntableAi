@@ -25,8 +25,13 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
+      console.error(
+        "causal-engine/run auth error:",
+        authError,
+      );
+
       return NextResponse.json(
-        { error: `Authentication failed: ${authError.message}` },
+        { error: "Authentication failed" },
         { status: 401 },
       );
     }
@@ -95,10 +100,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `Causal engine failed: ${error.message}`
-            : "Causal engine failed",
+        error: "Causal engine failed",
       },
       { status: 500 },
     );
