@@ -45,9 +45,14 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
+      console.error(
+        "ai-kernel/run auth error:",
+        authError,
+      );
+
       return NextResponse.json(
         {
-          error: `Authentication failed: ${authError.message}`,
+          error: "Authentication failed",
         },
         { status: 401 },
       );
@@ -251,10 +256,7 @@ const kernel = await runAIKernel({
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `AI Kernel failed: ${error.message}`
-            : "AI Kernel failed",
+        error: "AI Kernel failed",
       },
       { status: 500 },
     );

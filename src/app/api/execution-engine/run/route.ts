@@ -35,7 +35,15 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 401 });
+      console.error(
+        "execution-engine/run auth error:",
+        authError,
+      );
+
+      return NextResponse.json(
+        { error: "Authentication failed" },
+        { status: 401 },
+      );
     }
 
     if (!user) {
@@ -152,10 +160,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `Execution Engine failed: ${error.message}`
-            : "Execution Engine failed",
+        error: "Execution Engine failed",
       },
       { status: 500 },
     );

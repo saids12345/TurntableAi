@@ -22,7 +22,15 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 401 });
+      console.error(
+        "world-model/run auth error:",
+        authError,
+      );
+
+      return NextResponse.json(
+        { error: "Authentication failed" },
+        { status: 401 },
+      );
     }
 
     if (!user) {
@@ -76,10 +84,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `World model failed: ${error.message}`
-            : "World model failed",
+        error: "World model failed",
       },
       { status: 500 },
     );

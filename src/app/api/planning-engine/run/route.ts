@@ -22,8 +22,13 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
+      console.error(
+        "planning-engine/run auth error:",
+        authError,
+      );
+
       return NextResponse.json(
-        { error: `Authentication failed: ${authError.message}` },
+        { error: "Authentication failed" },
         { status: 401 },
       );
     }
@@ -108,10 +113,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `Planning engine failed: ${error.message}`
-            : "Planning engine failed",
+        error: "Planning engine failed",
       },
       { status: 500 },
     );

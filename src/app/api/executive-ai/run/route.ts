@@ -34,7 +34,15 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 401 });
+      console.error(
+        "executive-ai/run auth error:",
+        authError,
+      );
+
+      return NextResponse.json(
+        { error: "Authentication failed" },
+        { status: 401 },
+      );
     }
 
     if (!user) {
@@ -158,10 +166,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? `Executive AI failed: ${error.message}`
-            : "Executive AI failed",
+        error: "Executive AI failed",
       },
       { status: 500 },
     );
