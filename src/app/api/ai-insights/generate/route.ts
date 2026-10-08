@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
+import {
+  filterReadyRestaurantData,
+} from "@/lib/restaurantDataReadiness";
+import {
+  getRestaurantStates,
+} from "@/lib/restaurantState";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { requireProForApi } from "@/lib/requirePro";
 
@@ -403,43 +408,57 @@ async function getLocationSignalsFromSupabase(userId: string): Promise<LocationS
   });
 }
 
-async function getCurrentPerformanceSignals(userId: string): Promise<CurrentPerformance[]> {
-  const supabase = await getSupabaseRouteClient();
+async function getCurrentPerformanceSignals(
+  userId: string,
+): Promise<CurrentPerformance[]> {
+  const states =
+    filterReadyRestaurantData(
+      await getRestaurantStates({
+        userId,
+        lookbackDays: 45,
+      }),
+    );
 
-  const { data, error } = await supabase
-    .from("performance_signal_history")
-    .select(
-      "id, location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
-    )
-    .eq("user_id", userId)
-    .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
-    .order("captured_at", { ascending: false });
+  return states.flatMap<CurrentPerformance>(
+    (state) => {
+      const provenance =
+        state.metrics
+          .latestPerformanceProvenance;
 
-  if (error) throw error;
+      if (!provenance?.capturedAt) {
+        return [];
+      }
 
-  const latestByLocation = new Map<string, CurrentPerformance>();
-
-  for (const row of data || []) {
-    const locationName = String(row.location_name);
-    if (latestByLocation.has(locationName)) continue;
-
-    latestByLocation.set(locationName, {
-      locationName,
-      rowId: String(row.id),
-      sourceSystem: String(row.source_system),
-      sourceRecordId: String(row.source_record_id),
-      ingestedAt: String(row.ingested_at),
-      revenue: numOrNull(row.revenue),
-      orders: numOrNull(row.orders),
-      avgTicket: numOrNull(row.avg_ticket),
-      laborPct: numOrNull(row.labor_pct),
-      marginPct: numOrNull(row.margin_pct),
-      refunds: numOrNull(row.refunds),
-      capturedAt: String(row.captured_at),
-    });
-  }
-
-  return Array.from(latestByLocation.values());
+      return [
+        {
+          locationName:
+            state.locationName,
+          rowId:
+            provenance.rowId,
+          sourceSystem:
+            provenance.sourceSystem,
+          sourceRecordId:
+            provenance.sourceRecordId,
+          ingestedAt:
+            provenance.ingestedAt,
+          revenue:
+            state.metrics.revenue,
+          orders:
+            state.metrics.orders,
+          avgTicket:
+            state.metrics.avgTicket,
+          laborPct:
+            state.metrics.laborPct,
+          marginPct:
+            state.metrics.marginPct,
+          refunds:
+            state.metrics.refunds,
+          capturedAt:
+            provenance.capturedAt,
+        },
+      ];
+    },
+  );
 }
 
 function findTopRevenueRisk(performanceSignals: CurrentPerformance[]) {
