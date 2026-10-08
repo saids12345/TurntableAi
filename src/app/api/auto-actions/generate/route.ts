@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
+import {
+  filterReadyRestaurantData,
+} from "@/lib/restaurantDataReadiness";
+import {
+  getRestaurantStates,
+} from "@/lib/restaurantState";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { requireProForApi } from "@/lib/requirePro";
 import { runAIKernel } from "@/lib/aiKernel";
@@ -43,7 +48,6 @@ type PerformanceProvenance = {
 type CommandCenterLocation = {
   id: string;
   name: string;
-  city: string;
   health: HealthStatus;
   salesDeltaPct: number | null;
   reviewIssueCount: number;
@@ -115,21 +119,6 @@ type ReviewLocationRow = {
   id: string;
   name: string;
   title: string | null;
-};
-
-type PerformanceSignalRow = {
-  id: string;
-  location_name: string;
-  source_system: string;
-  source_record_id: string;
-  ingested_at: string;
-  revenue: number | null;
-  orders: number | null;
-  avg_ticket: number | null;
-  labor_pct: number | null;
-  margin_pct: number | null;
-  refunds: number | null;
-  captured_at: string;
 };
 
 type DecisionContext = {
@@ -894,7 +883,11 @@ function buildAutoAction(
     reason = "Service flow friction detected during guest experience analysis.";
     triggerType = "throughput_pressure";
     likelyOutcome = "Service speed improves and negative wait-time complaints decline.";
-  } else if (location.health !== "healthy" && location.openAlerts >= 2) {
+  } else if (
+    location.latestLaborPct !== null &&
+    location.health !== "healthy" &&
+    location.openAlerts >= 2
+  ) {
     actionType = "labor_adjustment";
     title = `Tighten execution at ${location.name}`;
     reason =
@@ -1155,25 +1148,16 @@ const forceSupersedeFailure =
       );
     }
 
-    const { data: performanceRows, error: performanceError } = await supabase
-      .from("performance_signal_history")
-      .select(
-        "id, location_name, source_system, source_record_id, ingested_at, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
-      )
-      .eq("user_id", user.id)
-      .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
-      .order("captured_at", { ascending: false });
-
-    if (performanceError) {
-      console.error("auto-actions/generate performance error:", performanceError);
-      return NextResponse.json(
-        { error: `Failed to load performance signals: ${performanceError.message}` },
-        { status: 500 }
+    const readyPerformanceStates =
+      filterReadyRestaurantData(
+        await getRestaurantStates({
+          userId: user.id,
+          lookbackDays: 45,
+        }),
       );
-    }
 
-    const reviews = (reviewRows || []) as ReviewRow[];
-    const perf = (performanceRows || []) as PerformanceSignalRow[];
+    const reviews =
+      (reviewRows || []) as ReviewRow[];
 
     const locationLookup = new Map<string, { id: string; displayName: string }>();
 
@@ -1189,31 +1173,31 @@ const forceSupersedeFailure =
       }
     }
 
-    const performanceByLocation = new Map<
-      string,
-      { latest: PerformanceSignalRow | null; previous: PerformanceSignalRow | null }
-    >();
-
-    for (const row of perf) {
-      const key = normalizeLocationName(row.location_name);
-      if (!key) continue;
-
-      const existing = performanceByLocation.get(key);
-
-      if (!existing) {
-        performanceByLocation.set(key, { latest: row, previous: null });
-        continue;
-      }
-
-      if (!existing.previous) {
-        performanceByLocation.set(key, { latest: existing.latest, previous: row });
-      }
-    }
+    const performanceByLocation =
+      new Map(
+        readyPerformanceStates
+          .map(
+            (state) =>
+              [
+                normalizeLocationName(
+                  state.locationName,
+                ),
+                state,
+              ] as const,
+          )
+          .filter(
+            ([key]) =>
+              Boolean(key),
+          ),
+      );
 
     const allLocationNames = Array.from(
       new Set([
         ...reviewLocations.map((x) => x.title?.trim() || x.name),
-        ...perf.map((x) => x.location_name),
+        ...readyPerformanceStates.map(
+          (state) =>
+            state.locationName,
+        ),
         ...reviews
           .map((x) => x.location_name)
           .filter((x): x is string => typeof x === "string" && !!x.trim()),
@@ -1243,21 +1227,110 @@ const forceSupersedeFailure =
       const issueBuckets = detectIssueBuckets(negativeReviews);
       const topIssue = topIssueLabel(issueBuckets);
 
-      const perfPair = performanceByLocation.get(normalizedName);
-      const latestRevenue = numOrNull(perfPair?.latest?.revenue);
-      const previousRevenue = numOrNull(perfPair?.previous?.revenue);
-      const latestOrders = numOrNull(perfPair?.latest?.orders);
-      const previousOrders = numOrNull(perfPair?.previous?.orders);
-      const latestAvgTicket = numOrNull(perfPair?.latest?.avg_ticket);
-      const previousAvgTicket = numOrNull(perfPair?.previous?.avg_ticket);
-      const latestLaborPct = numOrNull(perfPair?.latest?.labor_pct);
-      const latestMarginPct = numOrNull(perfPair?.latest?.margin_pct);
-      const latestRefunds = numOrNull(perfPair?.latest?.refunds);
+      const performanceState =
+        performanceByLocation.get(
+          normalizedName,
+        ) ??
+        null;
 
-      let salesDeltaPct: number | null = null;
-      if (latestRevenue !== null && previousRevenue !== null && previousRevenue !== 0) {
-        salesDeltaPct = Math.round(((latestRevenue - previousRevenue) / previousRevenue) * 100);
-      }
+      const latestRevenue =
+        performanceState?.metrics
+          .revenue ??
+        null;
+
+      const previousRevenue =
+        performanceState?.metrics
+          .previousRevenue ??
+        null;
+
+      const latestOrders =
+        performanceState?.metrics
+          .orders ??
+        null;
+
+      const previousOrders =
+        performanceState?.metrics
+          .previousOrders ??
+        null;
+
+      const latestAvgTicket =
+        performanceState?.metrics
+          .avgTicket ??
+        null;
+
+      // Canonical Restaurant State does not currently
+      // expose the previous average ticket.
+      const previousAvgTicket =
+        null;
+
+      const latestLaborPct =
+        performanceState?.metrics
+          .laborPct ??
+        null;
+
+      const latestMarginPct =
+        performanceState?.metrics
+          .marginPct ??
+        null;
+
+      const latestRefunds =
+        performanceState?.metrics
+          .refunds ??
+        null;
+
+      const revenueDeltaPct =
+        performanceState?.metrics
+          .revenueDeltaPct ??
+        null;
+
+      const salesDeltaPct =
+        revenueDeltaPct !== null
+          ? Math.round(
+              revenueDeltaPct,
+            )
+          : null;
+
+      const latestProvenance =
+        performanceState?.metrics
+          .latestPerformanceProvenance ??
+        null;
+
+      const previousProvenance =
+        performanceState?.metrics
+          .previousPerformanceProvenance ??
+        null;
+
+      const latestPerformanceProvenance =
+        latestProvenance?.capturedAt
+          ? {
+              rowId:
+                latestProvenance.rowId,
+              sourceSystem:
+                latestProvenance.sourceSystem,
+              sourceRecordId:
+                latestProvenance.sourceRecordId,
+              ingestedAt:
+                latestProvenance.ingestedAt,
+              capturedAt:
+                latestProvenance.capturedAt,
+            }
+          : null;
+
+      const previousPerformanceProvenance =
+        previousProvenance?.capturedAt
+          ? {
+              rowId:
+                previousProvenance.rowId,
+              sourceSystem:
+                previousProvenance.sourceSystem,
+              sourceRecordId:
+                previousProvenance.sourceRecordId,
+              ingestedAt:
+                previousProvenance.ingestedAt,
+              capturedAt:
+                previousProvenance.capturedAt,
+            }
+          : null;
 
       let openAlerts = 0;
       if (avgRating !== null && avgRating < 4) openAlerts += 1;
@@ -1285,7 +1358,6 @@ const forceSupersedeFailure =
       return {
         id: matchingLocation?.id ?? `live-${index + 1}`,
         name: matchingLocation?.displayName ?? locationName,
-        city: "San Diego",
         health,
         salesDeltaPct,
         reviewIssueCount: negativeReviews.length,
@@ -1302,24 +1374,8 @@ const forceSupersedeFailure =
         latestLaborPct,
         latestMarginPct,
         latestRefunds,
-        latestPerformanceProvenance: perfPair?.latest
-          ? {
-              rowId: perfPair.latest.id,
-              sourceSystem: perfPair.latest.source_system,
-              sourceRecordId: perfPair.latest.source_record_id,
-              ingestedAt: perfPair.latest.ingested_at,
-              capturedAt: perfPair.latest.captured_at,
-            }
-          : null,
-        previousPerformanceProvenance: perfPair?.previous
-          ? {
-              rowId: perfPair.previous.id,
-              sourceSystem: perfPair.previous.source_system,
-              sourceRecordId: perfPair.previous.source_record_id,
-              ingestedAt: perfPair.previous.ingested_at,
-              capturedAt: perfPair.previous.captured_at,
-            }
-          : null,
+        latestPerformanceProvenance,
+        previousPerformanceProvenance,
         negativeReviewExamples: negativeReviews
           .map((review) => compactText(review.text, 120))
           .filter(Boolean)

@@ -246,6 +246,16 @@ Return plain text (no JSON).`;
       forecast, // [{ day, sales }]
       summary: aiSummary,
       actions: aiActions,
+      dataTrust: {
+        classification: "manual_analysis",
+        source: body.posText?.trim()
+          ? "manual_pos_text"
+          : "manual_inputs",
+        trustedPerformance: false,
+        eligibleForBrain: false,
+        persistedToPerformanceHistory: false,
+        forecastType: "heuristic_projection",
+      },
       debug: {
         usedPOSRows: pos.rows.length,
         computedFrom: {
