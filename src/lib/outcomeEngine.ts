@@ -474,6 +474,26 @@ function buildLesson(params: {
   return `When ${problemText} appears${locationText}, ${actionText} should remain an operator-reviewed playbook until stronger evidence appears. Outcome score: ${score}/100.`;
 }
 
+export function requireOutcomeEngineRows<T>(
+  result: { data: T[] | null; error: unknown },
+  source: "reviews" | "trusted performance",
+): T[] {
+  if (result.error) {
+    console.error(`outcomeEngine ${source} load failed:`, result.error);
+    throw new Error(
+      `Outcome Engine data unavailable: ${source} could not be loaded.`,
+    );
+  }
+
+  if (!Array.isArray(result.data)) {
+    throw new Error(
+      `Outcome Engine data unavailable: ${source} returned an invalid response.`,
+    );
+  }
+
+  return result.data;
+}
+
 async function loadReviews(params: {
   supabase: Awaited<ReturnType<typeof getSupabaseRouteClient>>;
   userId: string;
@@ -488,12 +508,10 @@ async function loadReviews(params: {
     .gte("update_time", startIso)
     .order("update_time", { ascending: true });
 
-  if (error) {
-    console.warn("outcomeEngine reviews load failed:", error.message);
-    return [] as ReviewRow[];
-  }
-
-  return (data ?? []) as ReviewRow[];
+  return requireOutcomeEngineRows<ReviewRow>(
+    { data, error },
+    "reviews",
+  );
 }
 
 async function loadPerformanceSignals(params: {
@@ -514,12 +532,10 @@ async function loadPerformanceSignals(params: {
 
   const { data, error } = await query;
 
-  if (error) {
-    console.warn("outcomeEngine performance load failed:", error.message);
-    return [] as PerformanceSignalRow[];
-  }
-
-  return (data ?? []) as PerformanceSignalRow[];
+  return requireOutcomeEngineRows<PerformanceSignalRow>(
+    { data, error },
+    "trusted performance",
+  );
 }
 
 export function nearestOutcomeSnapshotBefore(
