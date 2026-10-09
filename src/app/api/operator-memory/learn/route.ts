@@ -1257,8 +1257,10 @@ export async function GET() {
     } = await supabase.auth.getUser();
 
     if (authError) {
+      console.error("operator-memory/learn auth error:", authError);
+
       return NextResponse.json(
-        { error: `Authentication failed: ${authError.message}` },
+        { error: "Authentication failed" },
         { status: 401 }
       );
     }
@@ -1282,12 +1284,7 @@ export async function GET() {
   } catch (error) {
     console.error("operator-memory/learn GET unexpected error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? `Unexpected error: ${error.message}`
-            : "Unexpected error",
-      },
+      { error: "Operator learning failed" },
       { status: 500 }
     );
   }
@@ -1305,8 +1302,10 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
+      console.error("operator-memory/learn auth error:", authError);
+
       return NextResponse.json(
-        { error: `Authentication failed: ${authError.message}` },
+        { error: "Authentication failed" },
         { status: 401 }
       );
     }
@@ -1447,7 +1446,7 @@ export async function POST(request: Request) {
               "refresh_failed",
             saved: 0,
             error:
-              refreshError,
+              "Decision refresh failed",
           };
         } else {
           decisionRefresh = {
@@ -1471,10 +1470,6 @@ export async function POST(request: Request) {
           };
         }
       } catch (refreshError) {
-        const message =
-          refreshError instanceof Error
-            ? refreshError.message
-            : "Unknown decision refresh error.";
     
         console.warn(
           "operator-memory/learn decision refresh unexpected error:",
@@ -1488,7 +1483,7 @@ export async function POST(request: Request) {
             "refresh_failed",
           saved: 0,
           error:
-            message,
+            "Decision refresh failed",
         };
       }
     }
@@ -1515,12 +1510,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("operator-memory/learn POST unexpected error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? `Unexpected error: ${error.message}`
-            : "Unexpected error",
-      },
+      { error: "Operator learning failed" },
       { status: 500 }
     );
   }
