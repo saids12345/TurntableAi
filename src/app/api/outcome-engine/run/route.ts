@@ -32,8 +32,10 @@ export async function GET() {
     } = await supabase.auth.getUser();
 
     if (authError) {
+      console.error("outcome-engine/run auth error:", authError);
+
       return NextResponse.json(
-        { error: `Authentication failed: ${authError.message}` },
+        { error: "Authentication failed" },
         { status: 401 }
       );
     }
@@ -58,12 +60,7 @@ export async function GET() {
     console.error("outcome-engine/run GET unexpected error:", error);
 
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? `Unexpected error: ${error.message}`
-            : "Unexpected error",
-      },
+      { error: "Outcome engine failed" },
       { status: 500 }
     );
   }
@@ -81,8 +78,10 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError) {
+      console.error("outcome-engine/run auth error:", authError);
+
       return NextResponse.json(
-        { error: `Authentication failed: ${authError.message}` },
+        { error: "Authentication failed" },
         { status: 401 }
       );
     }
@@ -123,12 +122,7 @@ export async function POST(request: Request) {
     console.error("outcome-engine/run POST unexpected error:", error);
 
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? `Unexpected error: ${error.message}`
-            : "Unexpected error",
-      },
+      { error: "Outcome engine failed" },
       { status: 500 }
     );
   }
