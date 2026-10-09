@@ -1017,8 +1017,9 @@ async function learnFromAction(params: {
   supabase: Awaited<ReturnType<typeof getSupabaseRouteClient>>;
   userId: string;
   action: AutoActionRow;
+  persist: boolean;
 }) {
-  const { supabase, userId, action } = params;
+  const { supabase, userId, action, persist } = params;
 
   const payload = getPayload(action);
   const signal = getSignal(action);
@@ -1164,6 +1165,9 @@ async function learnFromAction(params: {
       : null,
   };
 
+  // Only an explicit save request may write Operator Memory.
+  if (persist !== true) return result;
+
   const saved = await saveLearningResult({ supabase, userId, result });
 
   return {
@@ -1206,8 +1210,9 @@ async function runLearning(params: {
   supabase: Awaited<ReturnType<typeof getSupabaseRouteClient>>;
   userId: string;
   actionId?: string | null;
+  persist: boolean;
 }) {
-  const { supabase, userId, actionId } = params;
+  const { supabase, userId, actionId, persist } = params;
 
   let query = supabase
     .from("auto_actions")
@@ -1228,7 +1233,12 @@ async function runLearning(params: {
   const results: LearningResult[] = [];
 
   for (const action of actions) {
-    const learned = await learnFromAction({ supabase, userId, action });
+    const learned = await learnFromAction({
+      supabase,
+      userId,
+      action,
+      persist,
+    });
     results.push(learned);
   }
 
@@ -1255,7 +1265,11 @@ export async function GET() {
 
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const results = await runLearning({ supabase, userId: user.id });
+    const results = await runLearning({
+      supabase,
+      userId: user.id,
+      persist: false,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -1306,6 +1320,7 @@ export async function POST(request: Request) {
     const results = await runLearning({
       supabase,
       userId: user.id,
+      persist: true,
       actionId:
         typeof body.actionId === "string" &&
         body.actionId.trim()
