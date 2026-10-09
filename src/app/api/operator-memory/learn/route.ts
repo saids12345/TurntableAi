@@ -325,6 +325,26 @@ function scoreOutcome(params: {
   return Math.round(clamp(score, 0, 100));
 }
 
+function requireOperatorLearningRows<T>(
+  result: { data: T[] | null; error: unknown },
+  source: "trusted performance" | "reviews",
+): T[] {
+  if (result.error) {
+    console.error(`operator-memory/learn ${source} load failed:`, result.error);
+    throw new Error(
+      `Operator learning data unavailable: ${source} could not be loaded.`,
+    );
+  }
+
+  if (!Array.isArray(result.data)) {
+    throw new Error(
+      `Operator learning data unavailable: ${source} returned an invalid response.`,
+    );
+  }
+
+  return result.data;
+}
+
 async function loadPerformanceWindow(params: {
   supabase: Awaited<ReturnType<typeof getSupabaseRouteClient>>;
   userId: string;
@@ -349,12 +369,10 @@ async function loadPerformanceWindow(params: {
     .lte("captured_at", afterIso)
     .order("captured_at", { ascending: true });
 
-  if (error) {
-    console.warn("operator-memory/learn performance lookup failed:", error);
-    return { before: null, after: null };
-  }
-
-  const rows = ((data ?? []) as PerformanceSignalRow[]).filter(
+  const rows = requireOperatorLearningRows<PerformanceSignalRow>(
+    { data, error },
+    "trusted performance",
+  ).filter(
     (row) => normalizeLocationName(row.location_name) === normalizedLocation
   );
 
@@ -399,12 +417,10 @@ async function loadRatingWindow(params: {
     .lte("update_time", afterIso)
     .order("update_time", { ascending: true });
 
-  if (error) {
-    console.warn("operator-memory/learn rating lookup failed:", error);
-    return { before: null, after: null };
-  }
-
-  const rows = ((data ?? []) as ReviewRow[]).filter(
+  const rows = requireOperatorLearningRows<ReviewRow>(
+    { data, error },
+    "reviews",
+  ).filter(
     (row) => normalizeLocationName(row.location_name) === normalizedLocation
   );
 
