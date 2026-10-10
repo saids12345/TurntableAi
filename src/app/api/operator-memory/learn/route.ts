@@ -63,7 +63,7 @@ type LearningResult = {
   actionTitle: string;
   problemType: string;
   status: LearningStatus;
-  outcomeScore: number;
+  outcomeScore: number | null;
   confidence: MemoryConfidence;
   lessonStrength: LessonStrength;
   reuseRecommended: boolean;
@@ -204,13 +204,15 @@ function inferConfidence(params: {
   return "low";
 }
 
-function inferLessonStrength(outcomeScore: number, confidence: MemoryConfidence): LessonStrength {
+function inferLessonStrength(outcomeScore: number | null, confidence: MemoryConfidence): LessonStrength {
+  if (outcomeScore === null) return "weak";
   if (outcomeScore >= 72 && confidence !== "low") return "strong";
   if (outcomeScore >= 50 || confidence === "medium") return "developing";
   return "weak";
 }
 
-function inferLearningStatus(outcomeScore: number): LearningStatus {
+function inferLearningStatus(outcomeScore: number | null): LearningStatus {
+  if (outcomeScore === null) return "monitoring";
   if (outcomeScore >= 70) return "success";
   if (outcomeScore >= 45) return "partial";
   if (outcomeScore < 45) return "failed";
@@ -220,13 +222,16 @@ function inferLearningStatus(outcomeScore: number): LearningStatus {
 function buildResultSummary(params: {
   actionTitle: string;
   locationName: string | null;
-  outcomeScore: number;
+  outcomeScore: number | null;
   revenueDeltaPct: number | null;
   ratingDelta: number | null;
   refundsDelta: number | null;
   status: LearningStatus;
 }) {
   const location = params.locationName ? ` at ${params.locationName}` : "";
+  if (params.outcomeScore === null) {
+    return `${params.actionTitle}${location} is being monitored. There is not enough comparable before-and-after evidence to score its outcome yet.`;
+  }
   const facts: string[] = [];
 
   if (params.revenueDeltaPct !== null) {
@@ -252,11 +257,15 @@ function buildLesson(params: {
   locationName: string | null;
   status: LearningStatus;
   reuseRecommended: boolean;
-  outcomeScore: number;
+  outcomeScore: number | null;
 }) {
   const location = params.locationName ? ` at ${params.locationName}` : "";
   const problem = params.problemType.replace(/_/g, " ");
   const action = params.actionType.replace(/_/g, " ");
+
+  if (params.outcomeScore === null) {
+    return `The outcome of ${action}${location} is not yet known. Collect comparable before-and-after performance or review measurements before deciding whether to reuse this action for ${problem}.`;
+  }
 
   if (params.status === "success") {
     return `When ${problem} appears${location}, ${action} is a strong candidate playbook. Reuse is recommended when similar signals appear. Outcome score: ${params.outcomeScore}/100.`;
@@ -285,9 +294,7 @@ function scoreOutcome(params: {
   laborAfter: number | null;
   marginBefore: number | null;
   marginAfter: number | null;
-}) {
-  let score = 50;
-
+}): number | null {
   const revenueDelta = pctChange(params.revenueBefore, params.revenueAfter);
   const ratingDelta =
     params.ratingBefore !== null && params.ratingAfter !== null
@@ -306,6 +313,11 @@ function scoreOutcome(params: {
       ? params.marginAfter - params.marginBefore
       : null;
 
+  if ([revenueDelta, ratingDelta, refundsDelta, laborDelta, marginDelta].every(
+    (delta) => delta === null,
+  )) return null;
+
+  let score = 50;
   if (revenueDelta !== null) score += clamp(revenueDelta * 1.6, -24, 28);
   if (ratingDelta !== null) score += clamp(ratingDelta * 18, -18, 18);
   if (refundsDelta !== null) score += clamp(-refundsDelta * 2.5, -20, 25);
@@ -1125,7 +1137,7 @@ async function learnFromAction(params: {
     marginAfter,
   });
 
-  const confidence = inferConfidence({
+  const confidence: MemoryConfidence = outcomeScore === null ? "low" : inferConfidence({
     hasBeforeAfterRevenue: revenueBefore !== null && revenueAfter !== null,
     hasBeforeAfterRating: ratingBefore !== null && ratingAfter !== null,
     hasBeforeAfterRefunds: refundsBefore !== null && refundsAfter !== null,
@@ -1135,7 +1147,8 @@ async function learnFromAction(params: {
 
   const status = inferLearningStatus(outcomeScore);
   const lessonStrength = inferLessonStrength(outcomeScore, confidence);
-  const reuseRecommended = status === "success" || (status === "partial" && outcomeScore >= 60);
+  const reuseRecommended = outcomeScore !== null &&
+    (status === "success" || (status === "partial" && outcomeScore >= 60));
 
   const revenueDeltaPct = pctChange(revenueBefore, revenueAfter);
   const ratingDelta =
@@ -1213,17 +1226,20 @@ async function learnFromAction(params: {
 }
 
 function summarizeLearning(results: LearningResult[]) {
-  const averageOutcomeScore =
-    results.length > 0
-      ? Math.round(results.reduce((sum, item) => sum + item.outcomeScore, 0) / results.length)
-      : null;
+  const scoredResults = results.filter(
+    (item): item is LearningResult & { outcomeScore: number } => item.outcomeScore !== null,
+  );
+  const averageOutcomeScore = scoredResults.length > 0
+    ? Math.round(scoredResults.reduce((sum, item) => sum + item.outcomeScore, 0) / scoredResults.length)
+    : null;
 
   const successCount = results.filter((item) => item.status === "success").length;
   const partialCount = results.filter((item) => item.status === "partial").length;
   const failedCount = results.filter((item) => item.status === "failed").length;
+  const monitoringCount = results.filter((item) => item.status === "monitoring").length;
   const reusableCount = results.filter((item) => item.reuseRecommended).length;
 
-  const playbookCounts = results.reduce<Record<string, number>>((counts, item) => {
+  const playbookCounts = scoredResults.reduce<Record<string, number>>((counts, item) => {
     counts[item.actionType] = (counts[item.actionType] ?? 0) + 1;
     return counts;
   }, {});
@@ -1237,6 +1253,7 @@ function summarizeLearning(results: LearningResult[]) {
     successCount,
     partialCount,
     failedCount,
+    monitoringCount,
     reusableCount,
     topPlaybook,
   };
