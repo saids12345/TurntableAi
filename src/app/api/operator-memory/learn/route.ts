@@ -355,10 +355,20 @@ async function loadPerformanceWindow(params: {
   if (!locationName) return { before: null, after: null };
 
   const normalizedLocation = normalizeLocationName(locationName);
-  const anchor = actionUpdatedAt ? new Date(actionUpdatedAt) : new Date();
+  const anchor = new Date(actionUpdatedAt ?? "");
+  const now = Date.now();
+  if (
+    !normalizedLocation ||
+    !Number.isFinite(anchor.getTime()) ||
+    anchor.getTime() > now
+  ) {
+    return { before: null, after: null };
+  }
 
-  const beforeIso = new Date(anchor.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  const afterIso = new Date(anchor.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  const beforeTime = anchor.getTime() - 14 * 24 * 60 * 60 * 1000;
+  const afterTime = Math.min(anchor.getTime() + 14 * 24 * 60 * 60 * 1000, now);
+  const beforeIso = new Date(beforeTime).toISOString();
+  const afterIso = new Date(afterTime).toISOString();
 
   const { data, error } = await supabase
     .from("performance_signal_history")
@@ -372,8 +382,18 @@ async function loadPerformanceWindow(params: {
   const rows = requireOperatorLearningRows<PerformanceSignalRow>(
     { data, error },
     "trusted performance",
-  ).filter(
-    (row) => normalizeLocationName(row.location_name) === normalizedLocation
+  ).filter((row) => {
+    const capturedAt = new Date(row.captured_at ?? "").getTime();
+    return (
+      normalizeLocationName(row.location_name) === normalizedLocation &&
+      Number.isFinite(capturedAt) &&
+      capturedAt >= beforeTime &&
+      capturedAt <= afterTime
+    );
+  }).sort(
+    (a, b) =>
+      new Date(a.captured_at ?? "").getTime() -
+      new Date(b.captured_at ?? "").getTime(),
   );
 
   if (!rows.length) return { before: null, after: null };
@@ -385,12 +405,12 @@ async function loadPerformanceWindow(params: {
 
   const afterRows = rows.filter((row) => {
     if (!row.captured_at) return false;
-    return new Date(row.captured_at).getTime() >= anchor.getTime();
+    return new Date(row.captured_at).getTime() > anchor.getTime();
   });
 
   return {
-    before: beforeRows.at(-1) ?? rows[0] ?? null,
-    after: afterRows[0] ?? rows.at(-1) ?? null,
+    before: beforeRows.at(-1) ?? null,
+    after: afterRows[0] ?? null,
   };
 }
 
@@ -404,10 +424,20 @@ async function loadRatingWindow(params: {
   if (!locationName) return { before: null, after: null };
 
   const normalizedLocation = normalizeLocationName(locationName);
-  const anchor = actionUpdatedAt ? new Date(actionUpdatedAt) : new Date();
+  const anchor = new Date(actionUpdatedAt ?? "");
+  const now = Date.now();
+  if (
+    !normalizedLocation ||
+    !Number.isFinite(anchor.getTime()) ||
+    anchor.getTime() > now
+  ) {
+    return { before: null, after: null };
+  }
 
-  const beforeIso = new Date(anchor.getTime() - 45 * 24 * 60 * 60 * 1000).toISOString();
-  const afterIso = new Date(anchor.getTime() + 45 * 24 * 60 * 60 * 1000).toISOString();
+  const beforeTime = anchor.getTime() - 45 * 24 * 60 * 60 * 1000;
+  const afterTime = Math.min(anchor.getTime() + 45 * 24 * 60 * 60 * 1000, now);
+  const beforeIso = new Date(beforeTime).toISOString();
+  const afterIso = new Date(afterTime).toISOString();
 
   const { data, error } = await supabase
     .from("reviews")
@@ -420,9 +450,15 @@ async function loadRatingWindow(params: {
   const rows = requireOperatorLearningRows<ReviewRow>(
     { data, error },
     "reviews",
-  ).filter(
-    (row) => normalizeLocationName(row.location_name) === normalizedLocation
-  );
+  ).filter((row) => {
+    const capturedAt = new Date(row.update_time ?? "").getTime();
+    return (
+      normalizeLocationName(row.location_name) === normalizedLocation &&
+      Number.isFinite(capturedAt) &&
+      capturedAt >= beforeTime &&
+      capturedAt <= afterTime
+    );
+  });
 
   const average = (items: ReviewRow[]) => {
     const ratings = items
@@ -438,7 +474,7 @@ async function loadRatingWindow(params: {
       rows.filter((row) => row.update_time && new Date(row.update_time).getTime() <= anchor.getTime())
     ),
     after: average(
-      rows.filter((row) => row.update_time && new Date(row.update_time).getTime() >= anchor.getTime())
+      rows.filter((row) => row.update_time && new Date(row.update_time).getTime() > anchor.getTime())
     ),
   };
 }
@@ -1056,16 +1092,16 @@ async function learnFromAction(params: {
   });
 
   const revenueBefore =
-    asNumber(performanceWindow.before?.revenue) ?? asNumber(signal?.previousRevenue) ?? null;
+    asNumber(performanceWindow.before?.revenue);
 
   const revenueAfter =
-    asNumber(performanceWindow.after?.revenue) ?? asNumber(signal?.latestRevenue) ?? null;
+    asNumber(performanceWindow.after?.revenue);
 
   const refundsBefore =
-    asNumber(performanceWindow.before?.refunds) ?? asNumber(signal?.previousRefunds) ?? null;
+    asNumber(performanceWindow.before?.refunds);
 
   const refundsAfter =
-    asNumber(performanceWindow.after?.refunds) ?? asNumber(signal?.latestRefunds) ?? null;
+    asNumber(performanceWindow.after?.refunds);
 
   const laborBefore = asNumber(performanceWindow.before?.labor_pct);
   const laborAfter = asNumber(performanceWindow.after?.labor_pct);
@@ -1073,7 +1109,7 @@ async function learnFromAction(params: {
   const marginAfter = asNumber(performanceWindow.after?.margin_pct);
 
   const ratingBefore = ratingWindow.before;
-  const ratingAfter = ratingWindow.after ?? asNumber(signal?.avgRating) ?? null;
+  const ratingAfter = ratingWindow.after;
 
   const outcomeScore = scoreOutcome({
     actionType,
