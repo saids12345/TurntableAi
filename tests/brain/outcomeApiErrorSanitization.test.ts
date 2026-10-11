@@ -126,12 +126,12 @@ async function run() {
     assert.equal(success.response.status, 200);
     assert.deepEqual(success.body, {
       ...engineResult,
-      mode: method === "GET" ? "manual_get" : "manual_post",
+      mode: method === "GET" ? "preview" : "manual_post",
       ...(method === "POST" ? { options } : {}),
     });
     // Normalize objects created inside the VM before comparing prototypes.
     assert.deepEqual(JSON.parse(JSON.stringify(success.engineCalls)), [
-      { userId: "test-user", ...options },
+      { userId: "test-user", persist: method === "POST", ...options },
     ]);
     assert.equal(success.logs.length, 0);
   }

@@ -907,12 +907,14 @@ export async function saveOutcomeToOperatorMemory(params: {
 
 export async function evaluateRecentExecutedActions(params: {
   userId: string;
+  persist: boolean;
   limit?: number;
   minAgeHours?: number;
   reviewWindowDays?: number;
 }) {
   const {
   userId,
+  persist,
   limit = 20,
   minAgeHours =
     MIN_OUTCOME_VERIFICATION_AGE_HOURS,
@@ -951,6 +953,12 @@ export async function evaluateRecentExecutedActions(params: {
 
     if ("reason" in outcome) {
       results.push({ actionId: action.id, saved: false, skippedReason: outcome.reason });
+      continue;
+    }
+
+    // Saving requires an explicit request; previews never access Operator Memory.
+    if (persist !== true) {
+      results.push({ actionId: action.id, saved: false, evaluation: outcome });
       continue;
     }
 
