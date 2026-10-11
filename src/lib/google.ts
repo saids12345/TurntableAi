@@ -7,11 +7,10 @@ const CLIENT_ID = process.env.GOOGLE_INTEGRATIONS_CLIENT_ID!;
 const CLIENT_SECRET = process.env.GOOGLE_INTEGRATIONS_CLIENT_SECRET!;
 const REDIRECT_URI = process.env.GOOGLE_INTEGRATIONS_REDIRECT!;
 
-// Scopes we need now (Gmail) and soon (Google Business Profile)
+// This OAuth connection is for Google Business Profile, not Gmail.
 const SCOPES = [
   "openid",
   "email",
-  "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/business.manage",
 ];
 
@@ -26,7 +25,7 @@ export function googleAuthUrl(state: string) {
     redirect_uri: REDIRECT_URI, // e.g. http://localhost:3000/api/google/oauth/callback
     scope: SCOPES.join(" "),
     state,
-    include_granted_scopes: "true",
+    include_granted_scopes: "false",
   });
   return `${base}?${p.toString()}`;
 }
@@ -80,12 +79,6 @@ async function gfetch<T>(access_token: string, url: string) {
   return (await r.json()) as T;
 }
 
-// Gmail example (for polling review emails later)
-export async function listGmailMessages(access_token: string, q: string, maxResults = 25) {
-  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${maxResults}`;
-  return gfetch<{ messages?: { id: string; threadId: string }[] }>(access_token, url);
-}
-
 // Google Business Profile (kept from your version)
 export async function listAccounts(access_token: string) {
   return gfetch<{ accounts?: { name: string; accountName?: string }[] }>(
@@ -101,11 +94,13 @@ export async function listLocations(access_token: string, account: string) {
   return gfetch<{ locations?: { name: string; title?: string }[] }>(access_token, url);
 }
 
-export async function listReviews(access_token: string, locationName: string) {
+export async function listReviews(access_token: string, locationName: string, pageToken?: string) {
+  const tokenQuery = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "";
   const url = `https://mybusiness.googleapis.com/v4/${encodeURIComponent(
     locationName
-  )}/reviews?orderBy=updateTime desc&pageSize=20`;
+  )}/reviews?orderBy=updateTime desc&pageSize=20${tokenQuery}`;
   return gfetch<{
+    nextPageToken?: string;
     reviews?: {
       reviewId?: string;
       starRating?: "ONE" | "TWO" | "THREE" | "FOUR" | "FIVE";
