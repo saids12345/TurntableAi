@@ -11,6 +11,15 @@ import {
   useSearchParams,
 } from "next/navigation";
 
+type GoogleStatus = {
+  loading: boolean;
+  connected: boolean;
+  locationCount: number;
+  accountName: string | null;
+  alertEmail: string | null;
+  error: boolean;
+};
+
 type SquareStatus = {
   loading: boolean;
   connected: boolean;
@@ -44,10 +53,97 @@ function IntegrationsContent() {
   const q =
     useSearchParams();
 
-  const [email, setEmail] =
-    useState(
-      "owner@example.com",
-    );
+  const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({
+    loading: true,
+    connected: false,
+    locationCount: 0,
+    accountName: null,
+    alertEmail: null,
+    error: false,
+  });
+  const [googleAlertEmail, setGoogleAlertEmail] = useState("");
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleMessage, setGoogleMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadGoogle() {
+      try {
+        const response = await fetch("/api/google/connection", { cache: "no-store" });
+        if (!response.ok) throw new Error("Google status failed");
+        const json = await response.json() as {
+          connected?: boolean;
+          locationCount?: number;
+          accountName?: string | null;
+          alertEmail?: string | null;
+        };
+        if (cancelled) return;
+        setGoogleStatus({
+          loading: false,
+          connected: json.connected === true,
+          locationCount: typeof json.locationCount === "number" ? json.locationCount : 0,
+          accountName: typeof json.accountName === "string" ? json.accountName : null,
+          alertEmail: typeof json.alertEmail === "string" ? json.alertEmail : null,
+          error: false,
+        });
+        setGoogleAlertEmail(typeof json.alertEmail === "string" ? json.alertEmail : "");
+      } catch {
+        if (!cancelled) {
+          setGoogleStatus(prev => ({ ...prev, loading: false, error: true }));
+        }
+      }
+    }
+    void loadGoogle();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function saveGoogleAlertEmail() {
+    setGoogleBusy(true);
+    setGoogleMessage(null);
+    try {
+      const response = await fetch("/api/google/connection", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alertEmail: googleAlertEmail.trim() }),
+      });
+      if (!response.ok) throw new Error("Save failed");
+      const json = await response.json() as { alertEmail?: string };
+      const saved = json.alertEmail ?? googleAlertEmail.trim();
+      setGoogleAlertEmail(saved);
+      setGoogleStatus(prev => ({ ...prev, alertEmail: saved }));
+      setGoogleMessage("Review alert email saved.");
+    } catch {
+      setGoogleMessage("Could not save the alert email. Check the address and try again.");
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
+
+  async function disconnectGoogle() {
+    if (!window.confirm(
+      "Disconnect Google Business Profile? Future review monitoring will stop. " +
+      "Previously saved reviews will remain until you request their deletion.",
+    )) return;
+    setGoogleBusy(true);
+    setGoogleMessage(null);
+    try {
+      const response = await fetch("/api/google/connection", { method: "DELETE" });
+      if (!response.ok) throw new Error("Disconnect failed");
+      const json = await response.json() as { revocation?: string };
+      setGoogleStatus({
+        loading: false, connected: false, locationCount: 0,
+        accountName: null, alertEmail: null, error: false,
+      });
+      setGoogleAlertEmail("");
+      setGoogleMessage(json.revocation === "unconfirmed"
+        ? "Disconnected from TurnTableAI. Google revocation could not be confirmed; revoke access in your Google Account settings."
+        : "Google Business Profile disconnected. Review history remains until separately deleted.");
+    } catch {
+      setGoogleMessage("Could not disconnect Google. Please try again or contact support.");
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
 
   const [
     squareStatus,
@@ -222,78 +318,72 @@ function IntegrationsContent() {
           <div className="rounded-xl border border-white/10 bg-black/40 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="font-medium">
-                  Google Business Profile
-                </div>
-
-                <div className="text-sm text-white/60">
-                  Connect your Google listing to get email alerts for new reviews.
-                </div>
+                <div className="font-medium">Google Business Profile</div>
+                <p className="mt-1 text-sm text-white/60">
+                  Monitor reviews and receive email alerts on a schedule, not in real time.
+                </p>
+                {!googleStatus.loading && !googleStatus.error && (
+                  <p className="mt-2 text-xs text-white/70">
+                    {googleStatus.connected ? "Connected" : "Not connected"}
+                  </p>
+                )}
               </div>
-
-              <form
-                action="/api/google/auth/start"
-                method="GET"
-              >
-                <input
-                  type="hidden"
-                  name="email"
-                  value={email}
-                />
-
-                <button className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20">
-                  Connect
-                </button>
-              </form>
+              {googleStatus.connected ? (
+                <div className="flex gap-2">
+                  <form action="/api/google/auth/start" method="GET">
+                    <button disabled={googleBusy} className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20 disabled:opacity-50">
+                      Reconnect
+                    </button>
+                  </form>
+                  <button type="button" onClick={() => void disconnectGoogle()} disabled={googleBusy}
+                    className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20 disabled:opacity-50">
+                    {googleBusy ? "Working..." : "Disconnect"}
+                  </button>
+                </div>
+              ) : !googleStatus.loading && !googleStatus.error ? (
+                <form action="/api/google/auth/start" method="GET">
+                  <button className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20">
+                    Connect Google
+                  </button>
+                </form>
+              ) : null}
             </div>
 
-            <div className="mt-3">
-              <label className="block text-sm text-white/80">
-                Alert email (where notifications go)
-              </label>
-
-              <input
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm"
-                value={email}
-                onChange={(e) =>
-                  setEmail(
-                    e.target.value,
-                  )
-                }
-                placeholder="owner@restaurant.com"
-              />
-
-              <p className="mt-1 text-xs text-white/50">
-                Tip: use a shared inbox like managers@…
+            {googleStatus.loading && <p className="mt-3 text-xs text-white/60">Checking Google connection...</p>}
+            {googleStatus.error && (
+              <p className="mt-3 text-xs text-amber-200">
+                Google connection status is unavailable. Refresh before reconnecting.
               </p>
-            </div>
-
-            <div className="mt-4 flex gap-2">
-            <button
-                onClick={async () => {
-                  const r =
-                    await fetch(
-                      "/api/google/poll",
-                      {
-                        method:
-                          "POST",
-                      },
-                    );
-
-                  const j =
-                    await r.json();
-
-                  alert(
-                    `Polled. Emails sent: ${
-                      j.sent ?? 0
-                    }`,
-                  );
-                }}
-                className="rounded-lg border border-white/10 px-4 py-2 text-sm hover:bg-white/10"
-              >
-                Test poll now
-              </button>
-            </div>
+            )}
+            {googleStatus.connected && (
+              <div className="mt-4 space-y-3">
+                <p className="text-xs text-white/60">
+                  {googleStatus.locationCount} monitored Google location{googleStatus.locationCount === 1 ? "" : "s"}
+                  {googleStatus.accountName ? ` — ${googleStatus.accountName}` : ""}.
+                </p>
+                {googleStatus.locationCount === 0 && (
+                  <p className="text-xs text-amber-200">Connected, but no locations were found. Review alerts require at least one location.</p>
+                )}
+                <label htmlFor="google-alert-email" className="block text-sm text-white/80">Review alert email</label>
+                <div className="flex flex-wrap gap-2">
+                  <input id="google-alert-email" type="email" autoComplete="email"
+                    value={googleAlertEmail} onChange={e => setGoogleAlertEmail(e.target.value)}
+                    disabled={googleBusy} placeholder="owner@restaurant.com"
+                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm"
+                  />
+                  <button type="button" onClick={() => void saveGoogleAlertEmail()} disabled={googleBusy}
+                    className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/20 disabled:opacity-50">
+                    Save email
+                  </button>
+                </div>
+                <p className="text-xs text-white/50">Changes apply to future review alerts. No automated reply is posted to Google.</p>
+              </div>
+            )}
+            {googleMessage && <p role="status" className="mt-3 text-xs text-white/70">{googleMessage}</p>}
+            {googleMessage?.includes("revocation could not be confirmed") && (
+              <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer"
+                className="mt-2 inline-block text-xs underline text-white/80">Google account permissions</a>
+            )}
           </div>
 
           <div className="rounded-xl border border-white/10 bg-black/40 p-4">

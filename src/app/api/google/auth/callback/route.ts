@@ -110,8 +110,10 @@ export async function GET(req: NextRequest) {
     }
 
     const userId = user.id;
-    const email =
-      user.email ?? "owner@example.com";
+    if (!user.email) {
+      return redirectTo(req, "?error=google_account_email_required");
+    }
+    const email = user.email;
 
     // 3) Exchange auth code for tokens
     const tokens = await exchangeCode(code);

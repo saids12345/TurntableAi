@@ -24,6 +24,12 @@ export default function DataDeletionPage() {
         </li>
       </ol>
 
+      <p>
+        Disconnecting removes the saved Google connection and stops future review polling.
+        Previously collected reviews remain in your account until you separately request their deletion.
+        If Google's token revocation could not be confirmed, also revoke TurnTable AI in your Google Account permissions.
+      </p>
+
       <h2>Request account deletion</h2>
       <p>
         Email <a href="mailto:support@turntableai.net">support@turntableai.net</a> from the address linked to your
