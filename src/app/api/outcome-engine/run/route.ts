@@ -46,6 +46,7 @@ export async function GET() {
 
     const result = await evaluateRecentExecutedActions({
       userId: user.id,
+      persist: false,
       limit: 20,
       minAgeHours:
   MIN_OUTCOME_VERIFICATION_AGE_HOURS,
@@ -54,7 +55,7 @@ export async function GET() {
 
     return NextResponse.json({
       ...result,
-      mode: "manual_get",
+      mode: "preview",
     });
   } catch (error) {
     console.error("outcome-engine/run GET unexpected error:", error);
@@ -104,6 +105,7 @@ export async function POST(request: Request) {
 
     const result = await evaluateRecentExecutedActions({
       userId: user.id,
+      persist: true,
       limit,
       minAgeHours,
       reviewWindowDays,
