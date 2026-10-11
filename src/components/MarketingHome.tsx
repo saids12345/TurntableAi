@@ -23,9 +23,9 @@ export default function MarketingHome() {
           </h1>
 
           <p className="mt-6 text-lg text-neutral-300">
-            TurnTableAI monitors reviews, sales trends, and operational signals
-            across your locations — then recommends the next actions to grow
-            revenue and protect your reputation.
+            TurnTableAI brings together connected Google reviews and Square sales
+            signals, helping you spot patterns and decide what to do next.
+            Available data and features depend on your connections.
           </p>
 
           <div className="mt-10 flex items-center justify-center gap-4">
@@ -63,8 +63,8 @@ export default function MarketingHome() {
             <div className="card">
               <h3 className="font-semibold text-white">Reviews Everywhere</h3>
               <p className="mt-2 text-sm text-neutral-400">
-                Google, Yelp, email alerts — issues are easy to miss and slow
-                responses damage reputation.
+                Customer feedback and sales data live in different tools, making it
+                harder to spot issues and respond consistently.
               </p>
             </div>
 
@@ -99,8 +99,8 @@ export default function MarketingHome() {
           </h2>
 
           <p className="mt-4 text-center text-neutral-400">
-            TurnTableAI continuously analyzes signals from your business and
-            surfaces the most important actions in one Command Center.
+            TurnTableAI analyzes available restaurant data as updates arrive and
+            highlights potential issues and suggested next steps in one place.
           </p>
 
           <div className="mt-12 grid gap-6 md:grid-cols-3">
@@ -108,8 +108,8 @@ export default function MarketingHome() {
               <span className="text-xl">👀</span>
               <h3 className="mt-3 font-semibold text-white">Monitor</h3>
               <p className="mt-2 text-sm text-neutral-400">
-                Track reviews, sales signals, and operational issues across all
-                locations in real time.
+                See connected Google review activity and Square performance when
+                scheduled data updates become available.
               </p>
             </div>
 
@@ -117,8 +117,8 @@ export default function MarketingHome() {
               <span className="text-xl">🧠</span>
               <h3 className="mt-3 font-semibold text-white">Detect</h3>
               <p className="mt-2 text-sm text-neutral-400">
-                AI identifies risks like sales drops, review spikes, or service
-                issues before they become bigger problems.
+                Explore potential sales drops and review patterns, with context on
+                the data available for each recommendation.
               </p>
             </div>
 
@@ -126,8 +126,8 @@ export default function MarketingHome() {
               <span className="text-xl">⚡</span>
               <h3 className="mt-3 font-semibold text-white">Act</h3>
               <p className="mt-2 text-sm text-neutral-400">
-                Get recommended actions — respond to reviews, launch promotions,
-                or fix operational issues.
+                Review suggested actions, create editable replies, and choose which
+                operational improvements to pursue.
               </p>
             </div>
           </div>
@@ -138,31 +138,31 @@ export default function MarketingHome() {
       <section className="relative z-[1] px-6 py-16">
         <div className="mx-auto max-w-5xl">
           <h2 className="text-center text-2xl font-semibold text-white md:text-3xl">
-            Built for multi-location operators
+            Built for One Restaurant or Many
           </h2>
 
           <div className="mt-12 grid gap-6 md:grid-cols-3">
             <div className="card">
               <h3 className="font-semibold text-white">Command Center</h3>
               <p className="mt-2 text-sm text-neutral-400">
-                One dashboard to monitor health, alerts, and performance across
-                every location.
+                One dashboard for signals and performance across your connected
+                restaurant locations.
               </p>
             </div>
 
             <div className="card">
               <h3 className="font-semibold text-white">Review Monitoring</h3>
               <p className="mt-2 text-sm text-neutral-400">
-                Detect negative reviews instantly and generate brand-safe
-                replies in seconds.
+                Google Business Profile review checks are scheduled daily;
+                review replies are AI-drafted and editable.
               </p>
             </div>
 
             <div className="card">
               <h3 className="font-semibold text-white">Performance Insights</h3>
               <p className="mt-2 text-sm text-neutral-400">
-                Spot revenue dips, identify trends, and receive actionable
-                recommendations.
+                Explore connected Square sales trends and suggested actions,
+                with clear limits when data is missing.
               </p>
             </div>
           </div>

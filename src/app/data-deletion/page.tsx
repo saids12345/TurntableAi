@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Data Deletion | TurnTable AI",
   description: "How to disconnect Google and request deletion of your TurnTable AI account data.",
-  alternates: { canonical: "https://app.turntableai.net/data-deletion" },
+  alternates: { canonical: "https://turntableai.net/data-deletion" },
 };
 
 export default function DataDeletionPage() {

@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description:
     "How TurnTable AI collects, uses, and protects your information, plus your choices and rights under global privacy laws.",
   // ⬇️ Use your production domain here. Keep it consistent with the OAuth Consent Screen.
-  alternates: { canonical: "https://app.turntableai.net/privacy" },
+  alternates: { canonical: "https://turntableai.net/privacy" },
 };
 
 export default function PrivacyPolicyPage() {
@@ -25,8 +25,7 @@ export default function PrivacyPolicyPage() {
       <p>
         Controller: <strong>TurnTable AI</strong><br />
         Website: <a href="https://turntableai.net">turntableai.net</a><br />
-        Contact: <a href="mailto:privacy@turntableai.net">privacy@turntableai.net</a><br />
-        Postal Address: 123 Example St, City, State/Region, Country
+        Contact: <a href="mailto:privacy@turntableai.net">privacy@turntableai.net</a>
       </p>
 
       <h2>2) Scope</h2>

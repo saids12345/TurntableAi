@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description:
     "The legal terms that govern your use of TurnTable AI, including acceptable use, IP, warranties, liability, and dispute resolution.",
   // Keep this domain consistent with your OAuth consent screen + production app domain.
-  alternates: { canonical: "https://app.turntableai.net/terms" },
+  alternates: { canonical: "https://turntableai.net/terms" },
 };
 
 export default function TermsPage() {
@@ -82,7 +82,7 @@ export default function TermsPage() {
         You may revoke our access at any time via Google’s security settings at{" "}
         <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">
           myaccount.google.com/permissions
-        </a>. On disconnection or verified deletion request, we remove stored Google tokens and associated review records as described in our <a href="/data-deletion">Data Deletion</a> page.
+        </a>. Disconnecting removes saved Google connection credentials and stops future monitoring; previously collected reviews remain until you separately request deletion, as described on our <a href="/data-deletion">Data Deletion</a> page.
       </p>
       <p>Google, Google Business Profile, and related marks are trademarks of Google LLC.</p>
 
