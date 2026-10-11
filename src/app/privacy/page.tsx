@@ -165,8 +165,10 @@ export default function PrivacyPolicyPage() {
       <p>
         You can disconnect Google anytime in the app (Integrations → Disconnect). To request deletion of your
         account data, follow the steps at <a href="/data-deletion">/data-deletion</a> or email
-        {" "}<a href="mailto:support@turntableai.net">support@turntableai.net</a>. We remove Google tokens and
-        stored review records associated with your account within 30 days, subject to legal retention obligations.
+        {" "}<a href="mailto:support@turntableai.net">support@turntableai.net</a>. Disconnecting removes Google
+        connection credentials and stops future review monitoring. Previously collected review records remain
+        until you request their deletion. We process verified deletion requests within 30 days, subject to legal
+        retention obligations.
       </p>
 
       <h2>14) Children’s privacy</h2>

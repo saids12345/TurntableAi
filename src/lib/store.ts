@@ -158,7 +158,7 @@ export async function upsertConn(input: {
   // Do we already have a google connection for this user?
   const existing = await db
     .from("review_connections")
-    .select("id")
+    .select("id,email,last_seen_by_location")
     .eq("user_id", input.userId)
     .eq("provider", "google")
     .maybeSingle();
@@ -174,10 +174,13 @@ export async function upsertConn(input: {
     const upd = await db
       .from("review_connections")
       .update({
-        email: input.email,
+        // Reconnecting must not silently reset saved alert preferences or
+        // replay already-notified reviews from an empty checkpoint.
+        email: existing.data.email || input.email,
         account_name: input.accountName ?? null,
         tokens: storedTokens,
-        last_seen_by_location: input.lastSeenByLocation ?? {},
+        last_seen_by_location:
+          input.lastSeenByLocation ?? existing.data.last_seen_by_location ?? {},
         updated_at: new Date().toISOString(),
       })
       .eq("id", connId)
