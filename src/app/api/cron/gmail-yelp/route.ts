@@ -73,11 +73,31 @@ async function callGooglePollWithRetry(maxAttempts = 3) {
   return { ok: false, error: lastError };
 }
 
-export async function POST(req: NextRequest) {
-  // 1) Check cron secret (protect this route)
-  const incomingSecret = req.headers.get("x-cron-secret");
+type CronInvocation = "scheduled" | "manual";
 
-  if (!CRON_SECRET || incomingSecret !== CRON_SECRET) {
+// Vercel Cron invokes GET with Authorization: Bearer <CRON_SECRET>.
+export async function GET(req: NextRequest) {
+  return runGoogleReviewCron(req, "scheduled");
+}
+
+// Preserve existing authorized manual POST invocations.
+export async function POST(req: NextRequest) {
+  return runGoogleReviewCron(req, "manual");
+}
+
+async function runGoogleReviewCron(
+  req: NextRequest,
+  invocation: CronInvocation,
+) {
+  // Only scheduled GET accepts the bearer header. Legacy manual POST
+  // continues to require x-cron-secret; missing secrets fail closed.
+  const authorized =
+    Boolean(CRON_SECRET) &&
+    (invocation === "scheduled"
+      ? req.headers.get("authorization") === `Bearer ${CRON_SECRET}`
+      : req.headers.get("x-cron-secret") === CRON_SECRET);
+
+  if (!authorized) {
     return NextResponse.json(
       { ok: false, error: "Unauthorized cron request" },
       { status: 401 }
