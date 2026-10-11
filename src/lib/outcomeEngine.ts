@@ -47,7 +47,7 @@ export type OutcomeEvaluation = {
   baseline: OutcomeMetricSnapshot;
   current: OutcomeMetricSnapshot;
   delta: OutcomeDelta;
-  outcomeScore: number;
+  outcomeScore: number | null;
   success: boolean | null;
   lessonStrength: LessonStrength;
   confidence: MemoryConfidence;
@@ -311,10 +311,9 @@ function mergeReviewSnapshot(
     ? round(ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length, 2)
     : null;
 
-  const reviewIssueCount = matchingReviews.filter((review) => {
-    const rating = asNumber(review.rating);
-    return rating !== null && rating <= 3;
-  }).length;
+  const reviewIssueCount = ratings.length > 0
+    ? ratings.filter((rating) => rating <= 3).length
+    : null;
 
   return {
     ...snapshot,
@@ -328,8 +327,10 @@ function calculateOutcomeScore(params: {
   delta: OutcomeDelta;
   baseline: OutcomeMetricSnapshot;
   current: OutcomeMetricSnapshot;
-}) {
+}): number | null {
   const { actionType, delta, baseline, current } = params;
+  if (countMeasuredFields(delta, baseline, current) === 0) return null;
+
   let score = 50;
 
   if (delta.revenueDeltaPct !== null) score += clamp(delta.revenueDeltaPct * 1.5, -25, 30);
@@ -367,35 +368,38 @@ function calculateOutcomeScore(params: {
   return Math.round(clamp(score, 0, 100));
 }
 
-function inferLessonStrength(score: number): LessonStrength {
+function inferLessonStrength(score: number | null): LessonStrength {
+  if (score === null) return "weak";
   if (score >= 75) return "strong";
   if (score >= 55) return "developing";
   return "weak";
 }
 
-function inferConfidence(score: number, measuredFields: number): MemoryConfidence {
+function inferConfidence(score: number | null, measuredFields: number): MemoryConfidence {
+  if (score === null) return "low";
   if (score >= 75 && measuredFields >= 4) return "high";
   if (score >= 55 && measuredFields >= 2) return "medium";
   return "low";
 }
 
-function inferSuccess(score: number): boolean | null {
+function inferSuccess(score: number | null): boolean | null {
+  if (score === null) return null;
   if (score >= 65) return true;
   if (score <= 40) return false;
   return null;
 }
 
-function countMeasuredFields(snapshot: OutcomeMetricSnapshot) {
-  return [
-    snapshot.revenue,
-    snapshot.orders,
-    snapshot.avgTicket,
-    snapshot.laborPct,
-    snapshot.marginPct,
-    snapshot.refunds,
-    snapshot.avgRating,
-    snapshot.reviewIssueCount,
-  ].filter((value) => value !== null).length;
+function countMeasuredFields(
+  delta: OutcomeDelta,
+  baseline: OutcomeMetricSnapshot,
+  current: OutcomeMetricSnapshot,
+) {
+  const measuredDeltas = Object.values(delta).filter((value) => value !== null).length;
+  // A zero refund baseline still supports the existing absolute comparison.
+  const hasAbsoluteRefundComparison = delta.refundDeltaPct === null &&
+    baseline.refunds !== null && current.refunds !== null;
+
+  return measuredDeltas + (hasAbsoluteRefundComparison ? 1 : 0);
 }
 
 function buildDelta(baseline: OutcomeMetricSnapshot, current: OutcomeMetricSnapshot): OutcomeDelta {
@@ -433,11 +437,15 @@ function buildSummary(params: {
   actionTitle: string;
   actionType: string;
   locationName: string | null;
-  score: number;
+  score: number | null;
   delta: OutcomeDelta;
 }) {
   const { actionTitle, actionType, locationName, score, delta } = params;
   const locationText = locationName ? ` at ${locationName}` : "";
+
+  if (score === null) {
+    return `${actionTitle}${locationText} has insufficient comparable before-and-after evidence. The outcome remains unscored.`;
+  }
 
   const lines = [
     `${actionTitle}${locationText} was measured with an outcome score of ${score}/100.`,
@@ -459,13 +467,17 @@ function buildLesson(params: {
   problemType: string;
   actionType: string;
   locationName: string | null;
-  score: number;
+  score: number | null;
   reuseRecommended: boolean;
 }) {
   const { problemType, actionType, locationName, score, reuseRecommended } = params;
   const locationText = locationName ? ` at ${locationName}` : "";
   const actionText = actionType.replace(/_/g, " ");
   const problemText = problemType.replace(/_/g, " ");
+
+  if (score === null) {
+    return `The outcome of ${actionText}${locationText} is not yet known. Collect comparable before-and-after performance or review measurements before deciding whether to reuse this action for ${problemText}.`;
+  }
 
   if (reuseRecommended) {
     return `When ${problemText} appears${locationText}, ${actionText} has measurable supporting evidence and should be considered again. Outcome score: ${score}/100.`;
@@ -754,13 +766,13 @@ const effectiveMinAgeHours =
     afterEndIso
   );
 
-  const measuredFields = Math.min(countMeasuredFields(baseline), countMeasuredFields(current));
   const delta = buildDelta(baseline, current);
+  const measuredFields = countMeasuredFields(delta, baseline, current);
   const outcomeScore = calculateOutcomeScore({ actionType, delta, baseline, current });
   const success = inferSuccess(outcomeScore);
   const lessonStrength = inferLessonStrength(outcomeScore);
   const confidence = inferConfidence(outcomeScore, measuredFields);
-  const reuseRecommended = outcomeScore >= 65 && measuredFields >= 2;
+  const reuseRecommended = outcomeScore !== null && outcomeScore >= 65 && measuredFields >= 2;
   const summary = buildSummary({ actionTitle, actionType, locationName, score: outcomeScore, delta });
   const lesson = buildLesson({ problemType, actionType, locationName, score: outcomeScore, reuseRecommended });
 

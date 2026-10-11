@@ -90,7 +90,7 @@ export type DecisionOutcomeVerification = {
 
   measuredFields: number;
 
-  outcomeScore: number;
+  outcomeScore: number | null;
   rawSuccess: boolean | null;
 
   explanation: string;
@@ -816,6 +816,7 @@ export function verifyDecisionOutcome(
    * - or any measured target metric.
    */
   if (
+    evaluation.outcomeScore === null ||
     evaluation.status ===
       "not_ready" ||
     evaluation.status ===
