@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  collectRestaurantDataLocationNames,
   resolveRestaurantStateLocationNames,
 } from "@/lib/restaurantState";
 
@@ -23,6 +24,29 @@ import {
 import {
   buildNetworkWorldModel,
 } from "@/lib/worldModel";
+
+// Historical actions and memory are not restaurant identities.
+assert.deepEqual(
+  collectRestaurantDataLocationNames([], []),
+  [],
+);
+
+assert.deepEqual(
+  collectRestaurantDataLocationNames(
+    ["Square Location"],
+    ["Google Location", "Square Location"],
+  ),
+  ["Square Location", "Google Location"],
+);
+
+assert.deepEqual(
+  collectRestaurantDataLocationNames(
+    ["Square Location"],
+    ["Google Location"],
+    "Google Location",
+  ),
+  ["Google Location"],
+);
 
 assert.equal(
   resolveAIKernelMode(0),

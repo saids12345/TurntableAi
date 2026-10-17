@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { track } from "@/lib/track";
 
-type HealthStatus = "healthy" | "watch" | "risk";
+type HealthStatus = "healthy" | "watch" | "risk" | "unknown";
 type PerfSeverity = "low" | "medium" | "high";
 type PriorityLabel = "urgent" | "high" | "normal" | "low";
 
@@ -14,16 +14,16 @@ type LocationPerformance = {
   name: string;
   city: string;
   health: HealthStatus;
-  revenueToday: number;
-  revenueDeltaPct: number;
-  ordersToday: number;
-  ordersDeltaPct: number;
-  aov: number;
-  aovDeltaPct: number;
-  laborPct: number;
-  marginPct: number;
-  avgRating: number;
-  refunds?: number;
+  revenueToday: number | null;
+  revenueDeltaPct: number | null;
+  ordersToday: number | null;
+  ordersDeltaPct: number | null;
+  aov: number | null;
+  aovDeltaPct: number | null;
+  laborPct: number | null;
+  marginPct: number | null;
+  avgRating: number | null;
+  refunds?: number | null;
   topIssue: string | null;
   recommendedAction: string | null;
 };
@@ -51,171 +51,6 @@ type PerformanceAction = {
   priorityReason?: string;
 };
 
-const SEED_LOCATIONS: LocationPerformance[] = [
-  {
-    id: "perf_1",
-    name: "Mira Mesa",
-    city: "San Diego",
-    health: "risk",
-    revenueToday: 3825,
-    revenueDeltaPct: -9,
-    ordersToday: 188,
-    ordersDeltaPct: -7,
-    aov: 20.35,
-    aovDeltaPct: -2,
-    laborPct: 26,
-    marginPct: 58,
-    avgRating: 3.9,
-    refunds: 72,
-    topIssue: "Revenue and lunch traffic are both slipping.",
-    recommendedAction: "Launch lunch recovery promo and review labor coverage.",
-  },
-  {
-    id: "perf_2",
-    name: "Chula Vista",
-    city: "San Diego",
-    health: "healthy",
-    revenueToday: 4410,
-    revenueDeltaPct: 3,
-    ordersToday: 219,
-    ordersDeltaPct: 2,
-    aov: 20.14,
-    aovDeltaPct: 1,
-    laborPct: 19,
-    marginPct: 64,
-    avgRating: 4.6,
-    refunds: 18,
-    topIssue: null,
-    recommendedAction: "No action needed.",
-  },
-  {
-    id: "perf_3",
-    name: "Escondido",
-    city: "San Diego",
-    health: "watch",
-    revenueToday: 3990,
-    revenueDeltaPct: -4,
-    ordersToday: 201,
-    ordersDeltaPct: -3,
-    aov: 19.85,
-    aovDeltaPct: -1,
-    laborPct: 22,
-    marginPct: 61,
-    avgRating: 4.1,
-    refunds: 36,
-    topIssue: "Service pressure is affecting reviews and conversion.",
-    recommendedAction: "Approve replies and tighten shift execution.",
-  },
-  {
-    id: "perf_4",
-    name: "La Jolla",
-    city: "San Diego",
-    health: "healthy",
-    revenueToday: 5120,
-    revenueDeltaPct: 6,
-    ordersToday: 246,
-    ordersDeltaPct: 5,
-    aov: 20.81,
-    aovDeltaPct: 1,
-    laborPct: 18,
-    marginPct: 67,
-    avgRating: 4.7,
-    refunds: 12,
-    topIssue: null,
-    recommendedAction: "Test a high-margin upsell offer.",
-  },
-];
-
-const SEED_ALERTS: PerformanceAlert[] = [
-  {
-    id: "pa_1",
-    locationName: "Mira Mesa",
-    severity: "high",
-    type: "revenue",
-    title: "Revenue down 9%",
-    description: "Largest sales drop in the group compared to same day last week.",
-    priorityScore: 88,
-    priorityLabel: "urgent",
-    priorityReason: "double-digit revenue decline, labor materially above target",
-  },
-  {
-    id: "pa_2",
-    locationName: "Mira Mesa",
-    severity: "high",
-    type: "labor",
-    title: "Labor above target",
-    description: "Labor is at 26%, above the target operating range.",
-    priorityScore: 79,
-    priorityLabel: "high",
-    priorityReason: "labor materially above target, location at risk",
-  },
-  {
-    id: "pa_3",
-    locationName: "Escondido",
-    severity: "medium",
-    type: "reviews",
-    title: "Service pressure affecting conversion",
-    description: "Negative review trend aligns with lower order volume.",
-    priorityScore: 56,
-    priorityLabel: "high",
-    priorityReason: "guest friction detected, location on watch",
-  },
-  {
-    id: "pa_4",
-    locationName: "La Jolla",
-    severity: "low",
-    type: "margin",
-    title: "Margin leader",
-    description: "Highest margin in the group. Strong candidate for upsell testing.",
-    priorityScore: 14,
-    priorityLabel: "low",
-    priorityReason: "stable margin-positive opportunity",
-  },
-];
-
-const SEED_ACTIONS: PerformanceAction[] = [
-  {
-    id: "pact_1",
-    locationName: "Mira Mesa",
-    title: "Reduce lunch-hour labor waste",
-    reason: "High labor % and lower revenue are compressing performance.",
-    status: "pending",
-    priorityScore: 82,
-    priorityLabel: "urgent",
-    priorityReason: "not acted on yet, labor materially above target, revenue decline",
-  },
-  {
-    id: "pact_2",
-    locationName: "Mira Mesa",
-    title: "Run lunch recovery campaign",
-    reason: "Revenue and orders both declined versus baseline.",
-    status: "pending",
-    priorityScore: 78,
-    priorityLabel: "high",
-    priorityReason: "not acted on yet, strong revenue decline, orders dropping",
-  },
-  {
-    id: "pact_3",
-    locationName: "Escondido",
-    title: "Fix service bottlenecks",
-    reason: "Review pressure suggests operational drag during rush periods.",
-    status: "in_progress",
-    priorityScore: 49,
-    priorityLabel: "normal",
-    priorityReason: "guest friction detected, already in progress",
-  },
-  {
-    id: "pact_4",
-    locationName: "La Jolla",
-    title: "Promote top-margin item",
-    reason: "Strong stability makes this the safest test location.",
-    status: "done",
-    priorityScore: 12,
-    priorityLabel: "low",
-    priorityReason: "completed growth test",
-  },
-];
-
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -229,12 +64,17 @@ function num(value: unknown, fallback = 0) {
   return fallback;
 }
 
+function measuredValue(value: unknown): number | null {
+  const result = num(value, Number.NaN);
+  return Number.isFinite(result) ? result : null;
+}
+
 function text(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
 function asHealth(value: unknown): HealthStatus {
-  return value === "healthy" || value === "watch" || value === "risk" ? value : "watch";
+  return value === "healthy" || value === "watch" || value === "risk" || value === "unknown" ? value : "unknown";
 }
 
 function asSeverity(value: unknown): PerfSeverity {
@@ -263,7 +103,8 @@ function asPriorityLabel(value: unknown): PriorityLabel {
     : "normal";
 }
 
-function money(value: number) {
+function money(value: number | null) {
+  if (value === null) return "—";
   return value.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -271,7 +112,8 @@ function money(value: number) {
   });
 }
 
-function pct(value: number) {
+function pct(value: number | null) {
+  if (value === null) return "—";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value}%`;
 }
@@ -287,6 +129,12 @@ function healthStyles(health: HealthStatus) {
     return {
       badge: "bg-amber-500/15 text-amber-300 border border-amber-500/20",
       label: "Watch",
+    };
+  }
+  if (health === "unknown") {
+    return {
+      badge: "bg-neutral-500/15 text-neutral-300 border border-neutral-500/20",
+      label: "Insufficient Evidence",
     };
   }
   return {
@@ -360,84 +208,17 @@ function sortLocations(
   items: LocationPerformance[],
   sortBy: "risk" | "revenue" | "labor"
 ): LocationPerformance[] {
-  const rank = { risk: 0, watch: 1, healthy: 2 };
+  const rank = { risk: 0, watch: 1, unknown: 2, healthy: 3 };
 
   return [...items].sort((a, b) => {
-    if (sortBy === "revenue") return a.revenueDeltaPct - b.revenueDeltaPct;
-    if (sortBy === "labor") return b.laborPct - a.laborPct;
+    if (sortBy === "revenue") {
+      if (a.revenueDeltaPct === null) return b.revenueDeltaPct === null ? 0 : 1;
+      if (b.revenueDeltaPct === null) return -1;
+      return a.revenueDeltaPct - b.revenueDeltaPct;
+    }
+    if (sortBy === "labor") return a.laborPct === null ? (b.laborPct === null ? 0 : 1) : b.laborPct === null ? -1 : b.laborPct - a.laborPct;
     return rank[a.health] - rank[b.health];
   });
-}
-
-function deriveAlertTypeFromLocation(location: LocationPerformance): PerformanceAlert["type"] {
-  if (location.laborPct > 22) return "labor";
-  if (location.aovDeltaPct < 0) return "aov";
-  if (location.marginPct >= 65) return "margin";
-  if (
-    (location.avgRating ?? 5) < 4.2 ||
-    (location.topIssue ?? "").toLowerCase().includes("review")
-  ) {
-    return "reviews";
-  }
-  return "revenue";
-}
-
-function buildFallbackAlerts(locations: LocationPerformance[]): PerformanceAlert[] {
-  return locations.slice(0, 4).map((location, index) => ({
-    id: `live-alert-${location.id}-${index}`,
-    locationName: location.name,
-    severity: location.health === "risk" ? "high" : location.health === "watch" ? "medium" : "low",
-    type: deriveAlertTypeFromLocation(location),
-    title:
-      location.health === "risk"
-        ? "Performance risk detected"
-        : location.health === "watch"
-        ? "Watch this location closely"
-        : "Stable performance",
-    description:
-      location.topIssue ??
-      location.recommendedAction ??
-      "Monitor this location’s current KPI trend.",
-    priorityScore: location.health === "risk" ? 75 : location.health === "watch" ? 45 : 15,
-    priorityLabel: location.health === "risk" ? "high" : location.health === "watch" ? "normal" : "low",
-    priorityReason:
-      location.health === "risk"
-        ? "location at risk"
-        : location.health === "watch"
-        ? "location on watch"
-        : "stable performance",
-  }));
-}
-
-function buildFallbackActions(locations: LocationPerformance[]): PerformanceAction[] {
-  return locations.slice(0, 6).map((location, index) => ({
-    id: `live-action-${location.id}-${index}`,
-    locationName: location.name,
-    title:
-      location.health === "risk"
-        ? "Intervene on KPI decline"
-        : location.health === "watch"
-        ? "Monitor and tighten execution"
-        : "Run a low-risk growth test",
-    reason:
-      location.recommendedAction ??
-      location.topIssue ??
-      "Review this location and decide the next best operator move.",
-    status:
-      location.health === "risk"
-        ? "pending"
-        : location.health === "watch"
-        ? "in_progress"
-        : "done",
-    priorityScore: location.health === "risk" ? 78 : location.health === "watch" ? 44 : 10,
-    priorityLabel: location.health === "risk" ? "high" : location.health === "watch" ? "normal" : "low",
-    priorityReason:
-      location.health === "risk"
-        ? "not acted on yet"
-        : location.health === "watch"
-        ? "monitoring recommended"
-        : "completed or low urgency",
-  }));
 }
 
 function normalizeLocationPerformance(input: unknown, index: number): LocationPerformance | null {
@@ -447,28 +228,40 @@ function normalizeLocationPerformance(input: unknown, index: number): LocationPe
   const name = text(row.name || row.locationName);
   if (!name) return null;
 
-  const revenueToday = num(row.revenueToday ?? row.revenue ?? row.salesToday, 0);
-  const ordersToday = num(row.ordersToday ?? row.orders, 0);
-  const aov = num(row.aov ?? row.avgTicket ?? row.avg_ticket, 0);
-  const laborPct = num(row.laborPct ?? row.labor_pct, 0);
-  const marginPct = num(row.marginPct ?? row.margin_pct, 0);
-  const avgRating = num(row.avgRating ?? row.avg_rating, 0);
+  const parsedRefunds = num(row.refunds, Number.NaN);
+  const revenueToday = measuredValue(row.revenueToday);
+  const ordersToday = measuredValue(row.ordersToday);
+  const aov = measuredValue(row.aov);
+  const laborValue = num(row.laborPct ?? row.labor_pct, Number.NaN);
+  const laborPct = Number.isFinite(laborValue) ? laborValue : null;
+  const marginValue = num(row.marginPct ?? row.margin_pct, Number.NaN);
+  const marginPct = Number.isFinite(marginValue) ? marginValue : null;
+  const ratingValue = num(
+    row.avgRating ?? row.avg_rating,
+    Number.NaN,
+  );
+  const avgRating =
+    Number.isFinite(ratingValue) &&
+    ratingValue >= 1 &&
+    ratingValue <= 5
+      ? ratingValue
+      : null;
 
   return {
     id: text(row.id, `live-perf-${index + 1}`),
     name,
-    city: text(row.city, "San Diego"),
+    city: text(row.city, ""),
     health: asHealth(row.health),
     revenueToday,
-    revenueDeltaPct: num(row.revenueDeltaPct ?? row.salesDeltaPct, 0),
+    revenueDeltaPct: measuredValue(row.revenueDeltaPct),
     ordersToday,
-    ordersDeltaPct: num(row.ordersDeltaPct, 0),
+    ordersDeltaPct: measuredValue(row.ordersDeltaPct),
     aov,
-    aovDeltaPct: num(row.aovDeltaPct ?? row.avgTicketDeltaPct, 0),
+    aovDeltaPct: measuredValue(row.aovDeltaPct),
     laborPct,
     marginPct,
     avgRating,
-    refunds: num(row.refunds, 0),
+    refunds: Number.isFinite(parsedRefunds) && parsedRefunds >= 0 ? parsedRefunds : null,
     topIssue: text(row.topIssue, "") || null,
     recommendedAction: text(row.recommendedAction, "") || null,
   };
@@ -625,12 +418,8 @@ export default function PerformanceMonitorPage() {
 
         if (mappedLocations.length > 0) {
           setLiveLocations(mappedLocations);
-          setLiveAlerts(
-            mappedAlerts.length > 0 ? mappedAlerts : buildFallbackAlerts(mappedLocations)
-          );
-          setLiveActions(
-            mappedActions.length > 0 ? mappedActions : buildFallbackActions(mappedLocations)
-          );
+          setLiveAlerts(mappedAlerts);
+          setLiveActions(mappedActions);
         } else {
           setLiveLocations([]);
           setLiveAlerts([]);
@@ -651,34 +440,21 @@ export default function PerformanceMonitorPage() {
     void loadLiveSnapshot();
   }, []);
 
-  const boardLocations = useMemo(() => {
-    return liveLocations.length > 0 ? liveLocations : SEED_LOCATIONS;
-  }, [liveLocations]);
-
-  const boardAlerts = useMemo(() => {
-    if (liveLocations.length > 0) {
-      return liveAlerts.length > 0 ? liveAlerts : buildFallbackAlerts(liveLocations);
-    }
-    return SEED_ALERTS;
-  }, [liveAlerts, liveLocations]);
-
-  const boardActions = useMemo(() => {
-    if (liveLocations.length > 0) {
-      return liveActions.length > 0 ? liveActions : buildFallbackActions(liveLocations);
-    }
-    return SEED_ACTIONS;
-  }, [liveActions, liveLocations]);
+  const boardLocations = liveLocations;
+  const boardAlerts = liveAlerts;
+  const boardActions = liveActions;
 
   const summary = useMemo(() => {
     const atRisk = boardLocations.filter((l) => l.health === "risk").length;
-    const avgRevenueDelta =
-      boardLocations.length > 0
-        ? Math.round(
-            (boardLocations.reduce((sum, l) => sum + l.revenueDeltaPct, 0) /
-              boardLocations.length) *
-              10
-          ) / 10
-        : 0;
+    const availableRevenueDeltas = boardLocations
+      .map((location) => location.revenueDeltaPct)
+      .filter((value): value is number => value !== null);
+    const avgRevenueDelta = availableRevenueDeltas.length
+      ? Math.round(
+          (availableRevenueDeltas.reduce((sum, value) => sum + value, 0) /
+            availableRevenueDeltas.length) * 10
+        ) / 10
+      : null;
     const highAlerts = boardAlerts.filter((a) => a.severity === "high").length;
     const pendingActions = boardActions.filter((a) => a.status === "pending").length;
 
@@ -700,7 +476,7 @@ export default function PerformanceMonitorPage() {
   }, [boardLocations, locationFilter]);
 
   const topPerformer = useMemo(() => {
-    return [...boardLocations].sort((a, b) => b.marginPct - a.marginPct)[0] ?? boardLocations[0];
+    return [...boardLocations].filter((l): l is LocationPerformance & { marginPct: number } => l.marginPct !== null).sort((a, b) => b.marginPct - a.marginPct)[0] ?? null;
   }, [boardLocations]);
 
 
@@ -722,6 +498,33 @@ export default function PerformanceMonitorPage() {
     setLocationFilter("all");
     setSortBy("risk");
     hasAutoScrolledRef.current = false;
+  }
+
+  if (signalsLoading || boardLocations.length === 0) {
+    return (
+      <main className="min-h-screen w-full px-4 pb-12 pt-8 md:px-8">
+        <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-neutral-950 p-8">
+          <h1 className="text-3xl font-bold text-white">
+            Performance Monitor
+          </h1>
+          <p className="mt-4 text-neutral-300">
+            {signalsLoading
+              ? "Loading restaurant performance data..."
+              : signalsError
+                ? "Performance data is unavailable. No financial figures are being shown."
+                : "No restaurant performance records are available yet. Connect a production POS to begin."}
+          </p>
+          {!signalsLoading && (
+            <Link
+              href="/integrations"
+              className="mt-6 inline-block rounded-xl bg-white px-4 py-2 font-medium text-black"
+            >
+              Manage integrations
+            </Link>
+          )}
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -758,7 +561,7 @@ export default function PerformanceMonitorPage() {
 
                 {signalsError && (
                   <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs text-rose-200">
-                    Using fallback performance data
+                    Performance data unavailable
                   </span>
                 )}
 
@@ -831,8 +634,8 @@ export default function PerformanceMonitorPage() {
           <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
             <div>
               <SectionHeader
-                title="Today’s Performance Snapshot"
-                subtitle="Use this to quickly spot which locations are helping or hurting the group."
+                title="Recent Verified Performance Snapshot"
+                subtitle="Verified POS data from recent completed periods; not necessarily today."
               />
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -845,7 +648,7 @@ export default function PerformanceMonitorPage() {
                   )}
                 >
                   <div className="text-[11px] uppercase tracking-wide text-neutral-500">
-                    Biggest risk today
+                    Location to review
                   </div>
                   <div className="mt-2 text-lg font-semibold text-white">
                     {sortedLocations[0]?.name ?? "—"}
@@ -853,7 +656,7 @@ export default function PerformanceMonitorPage() {
                   <div className="mt-1 text-sm text-neutral-400">
                     {sortedLocations[0]?.topIssue ??
                       sortedLocations[0]?.recommendedAction ??
-                      "No issue detected."}
+                      (sortedLocations[0]?.health === "unknown" ? "Insufficient evidence to assess operational risk." : "No verified issue detected.")}
                   </div>
                 </div>
 
@@ -866,7 +669,7 @@ export default function PerformanceMonitorPage() {
                   )}
                 >
                   <div className="text-[11px] uppercase tracking-wide text-neutral-500">
-                    Strongest location
+                    Highest measured margin
                   </div>
                   <div className="mt-2 text-lg font-semibold text-white">
                     {topPerformer?.name ?? "—"}
@@ -983,7 +786,7 @@ export default function PerformanceMonitorPage() {
                         </div>
 
                         <p className="mt-3 text-sm text-neutral-400">
-                          {location.topIssue ?? "No major issue detected."}
+                          {location.topIssue ?? (location.health === "unknown" ? "Insufficient evidence to assess issues." : "No major issue detected.")}
                         </p>
                       </div>
 
@@ -998,7 +801,9 @@ export default function PerformanceMonitorPage() {
                           <div
                             className={cx(
                               "mt-1 text-xs",
-                              location.revenueDeltaPct < 0
+                              location.revenueDeltaPct === null
+                                ? "text-neutral-400"
+                                : location.revenueDeltaPct < 0
                                 ? "text-rose-300"
                                 : "text-emerald-300"
                             )}
@@ -1012,12 +817,14 @@ export default function PerformanceMonitorPage() {
                             Orders
                           </div>
                           <div className="mt-1 text-base font-semibold text-white">
-                            {location.ordersToday}
+                            {location.ordersToday ?? "—"}
                           </div>
                           <div
                             className={cx(
                               "mt-1 text-xs",
-                              location.ordersDeltaPct < 0
+                              location.ordersDeltaPct === null
+                                ? "text-neutral-400"
+                                : location.ordersDeltaPct < 0
                                 ? "text-rose-300"
                                 : "text-emerald-300"
                             )}
@@ -1036,7 +843,9 @@ export default function PerformanceMonitorPage() {
                           <div
                             className={cx(
                               "mt-1 text-xs",
-                              location.aovDeltaPct < 0
+                              location.aovDeltaPct === null
+                                ? "text-neutral-400"
+                                : location.aovDeltaPct < 0
                                 ? "text-rose-300"
                                 : "text-emerald-300"
                             )}
@@ -1052,10 +861,10 @@ export default function PerformanceMonitorPage() {
                           <div
                             className={cx(
                               "mt-1 text-base font-semibold",
-                              location.laborPct > 22 ? "text-rose-300" : "text-white"
+                              location.laborPct !== null && location.laborPct > 22 ? "text-rose-300" : "text-white"
                             )}
                           >
-                            {location.laborPct}%
+                            {location.laborPct !== null ? `${location.laborPct}%` : "—"}
                           </div>
                         </div>
 
@@ -1064,7 +873,7 @@ export default function PerformanceMonitorPage() {
                             Margin %
                           </div>
                           <div className="mt-1 text-base font-semibold text-white">
-                            {location.marginPct}%
+                            {location.marginPct !== null ? `${location.marginPct}%` : "—"}
                           </div>
                         </div>
 
@@ -1073,7 +882,7 @@ export default function PerformanceMonitorPage() {
                             Avg rating
                           </div>
                           <div className="mt-1 text-base font-semibold text-white">
-                            {location.avgRating.toFixed(1)}
+                            {location.avgRating !== null ? location.avgRating.toFixed(1) : "—"}
                           </div>
                         </div>
                       </div>
@@ -1084,7 +893,7 @@ export default function PerformanceMonitorPage() {
                         Recommended action
                       </div>
                       <div className="mt-1 text-sm text-white/90">
-                        {location.recommendedAction ?? "No action recommended."}
+                        {location.recommendedAction ?? "Insufficient verified evidence for a recommendation."}
                       </div>
 
                       <div className="mt-3 flex justify-end">

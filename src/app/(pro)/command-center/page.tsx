@@ -1,6 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { selectCurrentAutoActions } from "@/lib/currentAutoActionView";
+import {
+  getMemoryTrustState,
+  getVerifiedMemoryOutcomeScore,
+  isMemoryEligibleAsReusablePlaybook,
+} from "@/lib/operatorMemoryTrust";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /* =========================
@@ -204,6 +210,8 @@ type AutoActionItem = {
   reason: string;
   recommended_payload?: Record<string, unknown> | null;
   source_signal?: Record<string, unknown> | null;
+  evidenceStatus?: "current" | "unverified" | "historical" | "reconciliation_required";
+  execution_claimed_at?: string | null;
   status: AutoActionStatus;
   priority_score: number;
   created_at?: string;
@@ -868,7 +876,7 @@ export default function CommandCenterPage() {
     null,
   );
   const [autoActionFilter, setAutoActionFilter] =
-    useState<AutoActionFilter>("pending");
+    useState<AutoActionFilter>("all");
   const [autoActionFeedback, setAutoActionFeedback] = useState<
     Record<string, AutoActionFeedback>
   >({});
@@ -883,7 +891,7 @@ export default function CommandCenterPage() {
 
   const [loading, setLoading] = useState(true);
 
-  async function loadCommandCenter() {
+  async function loadCommandCenter(): Promise<boolean> {
     try {
       setCommandCenterError(null);
 
@@ -902,7 +910,7 @@ export default function CommandCenterPage() {
         setAlerts([]);
         setActions([]);
         setBriefing(null);
-        return;
+        return false;
       }
 
       const json = (await res.json()) as {
@@ -923,10 +931,12 @@ export default function CommandCenterPage() {
         .map(computeActionPriority)
         .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
 
-      setLocations(json.locations ?? []);
+      const locationRows = Array.isArray(json.locations) ? json.locations : [];
+      setLocations(locationRows);
       setAlerts(prioritizedAlerts);
       setActions(prioritizedActions);
       setBriefing(json.briefing ?? null);
+      return locationRows.length > 0;
     } catch (error) {
       const message =
         error instanceof Error
@@ -938,6 +948,7 @@ export default function CommandCenterPage() {
       setAlerts([]);
       setActions([]);
       setBriefing(null);
+      return false;
     }
   }
 
@@ -965,7 +976,7 @@ export default function CommandCenterPage() {
       };
 
       const items = Array.isArray(json.items) ? json.items : [];
-      const hydrated = items.map(hydrateAutoAction);
+      const hydrated = selectCurrentAutoActions(items).map(hydrateAutoAction);
 
       const sorted = [...hydrated].sort((a, b) => {
         if (b.priority_score !== a.priority_score) {
@@ -1097,11 +1108,11 @@ export default function CommandCenterPage() {
   useEffect(() => {
     async function load() {
       try {
-        await loadCommandCenter();
+        const hasLocationRows = await loadCommandCenter();
         const loadedActions = await loadAutoActions();
         await loadOperatorMemory();
 
-        if (loadedActions.length === 0 && !autoGenerateAttemptedRef.current) {
+        if (hasLocationRows && loadedActions.length === 0 && !autoGenerateAttemptedRef.current) {
           autoGenerateAttemptedRef.current = true;
           await handleGenerateAutoActions({ silent: true });
         }
@@ -1138,7 +1149,7 @@ export default function CommandCenterPage() {
   const autoActionSummary = useMemo(() => {
     return {
       pending: autoActions.filter((item) => item.status === "pending").length,
-      approved: autoActions.filter((item) => item.status === "approved").length,
+      approved: autoActions.filter((item) => item.status === "approved" && item.evidenceStatus !== "reconciliation_required").length,
       executed: autoActions.filter((item) => item.status === "executed").length,
       dismissed: autoActions.filter((item) => item.status === "dismissed")
         .length,
@@ -1151,16 +1162,24 @@ export default function CommandCenterPage() {
     };
   }, [autoActions]);
 
+  const reconciliationRequiredCount = autoActions.filter(
+    (item) => item.evidenceStatus === "reconciliation_required",
+  ).length;
+
   const filteredAutoActions = useMemo(() => {
     if (autoActionFilter === "all") return autoActions;
-    return autoActions.filter((item) => item.status === autoActionFilter);
+    return autoActions.filter(
+      (item) =>
+        item.status === autoActionFilter &&
+        item.evidenceStatus !== "reconciliation_required",
+    );
   }, [autoActions, autoActionFilter]);
 
   const autoActionFilterCounts = useMemo(() => {
     return {
       all: autoActions.length,
       pending: autoActions.filter((item) => item.status === "pending").length,
-      approved: autoActions.filter((item) => item.status === "approved").length,
+      approved: autoActions.filter((item) => item.status === "approved" && item.evidenceStatus !== "reconciliation_required").length,
       executed: autoActions.filter((item) => item.status === "executed").length,
       dismissed: autoActions.filter((item) => item.status === "dismissed")
         .length,
@@ -1249,10 +1268,25 @@ export default function CommandCenterPage() {
 
   const outcomeTrackingSummary = useMemo(() => {
     const active = operatorMemory.filter((item) => item.status === "active");
-    const measured = active.filter((item) => asNumber(item.outcome_score) !== null);
-    const reusable = measured.filter((item) => item.reuse_recommended === true);
-    const strong = measured.filter((item) => item.lesson_strength === "strong");
-    const weak = measured.filter((item) => item.lesson_strength === "weak");
+    const measured = active.flatMap((item) => {
+      const verifiedScore = getVerifiedMemoryOutcomeScore(item);
+      return verifiedScore === null
+        ? []
+        : [{ ...item, outcome_score: verifiedScore }];
+    });
+    const reusable = measured.filter((item) =>
+      isMemoryEligibleAsReusablePlaybook(item),
+    );
+    const strong = measured.filter(
+      (item) =>
+        item.lesson_strength === "strong" &&
+        getMemoryTrustState(item) === "verified_supporting",
+    );
+    const weak = measured.filter(
+      (item) =>
+        item.lesson_strength === "weak" &&
+        getMemoryTrustState(item) === "verified_cautionary",
+    );
 
     const averageScore =
       measured.length > 0
@@ -1574,6 +1608,52 @@ export default function CommandCenterPage() {
 
   if (loading) {
     return <div className="p-8 text-white">Loading Command Center...</div>;
+  }
+
+  if (commandCenterError) {
+    return (
+      <main className="space-y-5 p-8 text-white">
+        <h1 className="text-3xl font-bold">
+          Restaurant data unavailable
+        </h1>
+        <p className="text-neutral-400">
+          We couldn't load your restaurant information.
+          No operational recommendations or results are being shown.
+          Please try again or check your integrations.
+        </p>
+        <Link href="/integrations" className="text-cyan-300 underline">
+          Review integrations
+        </Link>
+      </main>
+    );
+  }
+
+  if (locations.length === 0) {
+    return (
+      <main className="space-y-6 p-8 text-white">
+        <section className="rounded-3xl border border-white/10 bg-neutral-950 p-8">
+          <p className="text-sm font-medium text-cyan-300">
+            Restaurant setup
+          </p>
+          <h1 className="mt-3 text-3xl font-bold">
+            Let's get your restaurant connected
+          </h1>
+          <p className="mt-4 max-w-2xl text-neutral-400">
+            No restaurant location signals are available yet.
+            Connect Square or Google Business Profile, or wait
+            for your first successful data sync. TurnTableAI
+            won't display current recommendations or outcome
+            scores without supporting restaurant data.
+          </p>
+          <Link
+            href="/integrations"
+            className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 font-semibold text-black"
+          >
+            Review integrations
+          </Link>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -2284,6 +2364,14 @@ export default function CommandCenterPage() {
             )}
           </div>
 
+          {reconciliationRequiredCount > 0 ? (
+            <div role="alert" className="mb-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+              <strong>{reconciliationRequiredCount} action(s) require execution reconciliation.</strong>{" "}
+              Their outcome is not confirmed. They cannot be executed, approved, or dismissed again.
+              Select All to inspect them; verify their downstream records before any manual correction.
+            </div>
+          ) : null}
+
           <div className="mb-4 flex flex-wrap gap-2">
             {(
               [
@@ -2337,10 +2425,14 @@ export default function CommandCenterPage() {
                         <span
                           className={cx(
                             "rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide",
-                            autoActionStatusStyles(item.status),
+                            item.evidenceStatus === "reconciliation_required"
+                              ? "bg-amber-500/20 text-amber-200"
+                              : autoActionStatusStyles(item.status),
                           )}
                         >
-                          {item.status}
+                          {item.evidenceStatus === "reconciliation_required"
+                            ? "Needs reconciliation"
+                            : item.status}
                         </span>
 
                         <span
@@ -2948,8 +3040,16 @@ export default function CommandCenterPage() {
                     </div>
                   ) : null}
 
+                  {item.evidenceStatus === "reconciliation_required" ? (
+                    <div role="alert" className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                      <strong>Execution outcome unconfirmed.</strong>{" "}
+                      A previous attempt was claimed {formatWhen(item.execution_claimed_at)}.
+                      Do not retry it. Review downstream records and reconcile manually.
+                    </div>
+                  ) : null}
+
                   <div className="mt-4 flex flex-wrap gap-3">
-                    {item.status === "pending" && (
+                    {item.evidenceStatus !== "reconciliation_required" && item.status === "pending" && (
                       <button
                         onClick={() =>
                           handleUpdateAutoActionStatus(item.id, "approved")
@@ -2961,7 +3061,7 @@ export default function CommandCenterPage() {
                       </button>
                     )}
 
-                    {item.status === "approved" && (
+                    {item.evidenceStatus !== "reconciliation_required" && item.status === "approved" && (
                       <button
                         onClick={() =>
                           handleUpdateAutoActionStatus(item.id, "executed")
@@ -2973,7 +3073,8 @@ export default function CommandCenterPage() {
                       </button>
                     )}
 
-                    {item.status !== "dismissed" &&
+                    {item.evidenceStatus !== "reconciliation_required" &&
+                      item.status !== "dismissed" &&
                       item.status !== "executed" && (
                         <button
                           onClick={() =>
@@ -2988,7 +3089,7 @@ export default function CommandCenterPage() {
                         </button>
                       )}
 
-                    {item.status === "approved" && (
+                    {item.evidenceStatus !== "reconciliation_required" && item.status === "approved" && (
                       <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-200">
                         Approved
                       </div>
