@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { selectCurrentAutoActions } from "@/lib/currentAutoActionView";
 import { useEffect, useMemo, useState } from "react";
 import OperatorWorkflow from "@/components/brain/OperatorWorkflow";
 import RecommendedAction from "@/components/brain/RecommendedAction";
@@ -45,6 +46,7 @@ type AutoActionItem = {
   priority_score?: number | null;
   recommended_payload?: Record<string, unknown> | null;
   source_signal?: Record<string, unknown> | null;
+  evidenceStatus?: "current" | "unverified" | "historical";
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -664,7 +666,7 @@ const loadedActions =
   Array.isArray(
     actionsJson.items,
   )
-    ? actionsJson.items
+    ? selectCurrentAutoActions(actionsJson.items)
     : [];
 
 /*
@@ -717,7 +719,12 @@ const currentCognitiveAction =
     : null;
 
 const sourceActionId =
-  urlSourceActionId ??
+  (
+    urlSourceActionId &&
+    loadedActions.some((action) => action.id === urlSourceActionId)
+      ? urlSourceActionId
+      : null
+  ) ??
   currentCognitiveAction?.id ??
   null;
 

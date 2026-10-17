@@ -7,6 +7,8 @@ import {
 } from "@/lib/restaurantState";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { requireProForApi } from "@/lib/requirePro";
+import { mapConnectedGoogleReviewRows } from "@/lib/connectedGoogleReviewEvidence";
+import { verifyAutoActionEvidence } from "@/lib/autoActionEvidenceServer";
 import { runAIKernel } from "@/lib/aiKernel";
 import {
   buildDecisionChangeProvenance,
@@ -996,6 +998,26 @@ function buildAutoAction(
   };
 }
 
+async function onlyVerifiedReusableActions(
+  userId: string,
+  actions: AutoActionRow[],
+): Promise<AutoActionRow[]> {
+  const verified = await Promise.all(
+    actions.map(async (action) => {
+      if (action.user_id !== userId) return false;
+
+      return verifyAutoActionEvidence({
+        userId,
+        locationName: action.location_name,
+        createdAt: action.created_at,
+        sourceSignal: action.source_signal,
+      });
+    }),
+  );
+
+  return actions.filter((_, index) => verified[index] === true);
+}
+
 export async function POST(request: Request) {
   await requireProForApi();
 
@@ -1063,7 +1085,13 @@ const forceSupersedeFailure =
         );
       }
 
-      if ((activeActions?.length ?? 0) > 0) {
+      const verifiedActiveActions =
+        await onlyVerifiedReusableActions(
+          user.id,
+          (activeActions ?? []) as AutoActionRow[],
+        );
+
+      if (verifiedActiveActions.length > 0) {
         return NextResponse.json({
           ok: true,
           skipped: true,
@@ -1071,7 +1099,7 @@ const forceSupersedeFailure =
           message:
             "Skipped: pending or approved auto actions already exist, so autonomous mode preserved them.",
           saved: 0,
-          items: (activeActions ?? []) as AutoActionRow[],
+          items: verifiedActiveActions,
           generatedAt: new Date().toISOString(),
         });
       }
@@ -1094,14 +1122,20 @@ const forceSupersedeFailure =
         );
       }
 
-      if ((recentActions?.length ?? 0) > 0) {
+      const verifiedRecentActions =
+        await onlyVerifiedReusableActions(
+          user.id,
+          (recentActions ?? []) as AutoActionRow[],
+        );
+
+      if (verifiedRecentActions.length > 0) {
         return NextResponse.json({
           ok: true,
           skipped: true,
           reason: "cooldown_active",
           message: `Skipped: auto actions were generated recently. Cooldown is ${AUTO_ACTION_COOLDOWN_MINUTES} minutes.`,
           saved: 0,
-          items: (recentActions ?? []) as AutoActionRow[],
+          items: verifiedRecentActions,
           generatedAt: new Date().toISOString(),
         });
       }
@@ -1137,6 +1171,7 @@ const forceSupersedeFailure =
       .from("reviews")
       .select("id, location_name, rating, text, update_time")
       .eq("user_id", user.id)
+      .eq("provider", "google")
       .gte("update_time", sinceReviewsIso)
       .order("update_time", { ascending: false });
 
@@ -1156,8 +1191,10 @@ const forceSupersedeFailure =
         }),
       );
 
-    const reviews =
-      (reviewRows || []) as ReviewRow[];
+    const reviews = mapConnectedGoogleReviewRows(
+      reviewLocations,
+      (reviewRows || []) as ReviewRow[],
+    );
 
     const locationLookup = new Map<string, { id: string; displayName: string }>();
 
@@ -1198,9 +1235,6 @@ const forceSupersedeFailure =
           (state) =>
             state.locationName,
         ),
-        ...reviews
-          .map((x) => x.location_name)
-          .filter((x): x is string => typeof x === "string" && !!x.trim()),
       ])
     ).filter(Boolean) as string[];
 
@@ -1911,10 +1945,7 @@ if (
   };
 }
 
-const staleCognitiveIds =
-  staleCognitiveActions.map(
-    (action) => action.id,
-  );
+
   if (forceInsertFailure) {
   return NextResponse.json(
     {
@@ -1925,7 +1956,107 @@ const staleCognitiveIds =
     { status: 500 },
   );
 }
-  const { data: inserted, error: insertError } = await supabase
+  // Verify the final recommendation candidates, including
+  // any changes made by the Cognitive Brain.
+  const candidateEvidence = await Promise.all(
+    actionsToInsert.map(async (candidate) => {
+      if (
+        candidate.user_id !== user.id ||
+        candidate.status !== "pending"
+      ) {
+        return false;
+      }
+
+      return verifyAutoActionEvidence({
+        userId: user.id,
+        locationName: candidate.location_name,
+        createdAt: candidate.created_at,
+        sourceSignal: candidate.source_signal,
+      });
+    }),
+  );
+
+  actionsToInsert = actionsToInsert.filter(
+    (_, index) => candidateEvidence[index] === true,
+  );
+
+  if (actionsToInsert.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: "insufficient_verified_evidence",
+      message:
+        "No new recommendations have sufficient verified restaurant evidence.",
+      saved: 0,
+      items: [],
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
+  // Do not generate a competing action while an earlier execution for this
+  // owner + restaurant still has an unresolved durable claim. This check is
+  // deliberately outside the force-regeneration cooldown bypass.
+  const blockedByExecutionClaim = new Set<string>();
+  const candidateLocations = Array.from(new Set(
+    actionsToInsert.map((candidate) => candidate.location_name),
+  ));
+
+  for (const locationName of candidateLocations) {
+    const { data: possibleClaims, error: claimsError } = await supabase
+      .from("auto_actions")
+      .select("id, user_id, location_name, status, execution_claim_token")
+      .eq("user_id", user.id)
+      .eq("location_name", locationName)
+      .in("status", ["pending", "approved"]);
+
+    // Supabase often caps result sets at 1000. Never treat a possibly
+    // truncated claim search as evidence that no claim exists.
+    if (claimsError || !Array.isArray(possibleClaims) || possibleClaims.length >= 1000) {
+      console.error("auto-actions/generate execution claim check failed:", claimsError);
+      return NextResponse.json(
+        { ok: false, error: "Could not safely verify unresolved execution claims" },
+        { status: 500 },
+      );
+    }
+
+    if (possibleClaims.some((row) =>
+      row.user_id === user.id &&
+      row.location_name === locationName &&
+      (row.status === "pending" || row.status === "approved") &&
+      typeof row.execution_claim_token === "string" &&
+      row.execution_claim_token.trim().length > 0
+    )) {
+      blockedByExecutionClaim.add(locationName);
+    }
+  }
+
+  actionsToInsert = actionsToInsert.filter(
+    (candidate) => !blockedByExecutionClaim.has(candidate.location_name),
+  );
+
+  if (actionsToInsert.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: "execution_reconciliation_required",
+      message: "New recommendations are paused for locations with unresolved execution claims.",
+      saved: 0,
+      items: [],
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
+const staleCognitiveIds =
+  staleCognitiveActions
+    .filter((oldAction) => actionsToInsert.some((freshAction) => {
+      const provenance = (freshAction.recommended_payload as {
+        cognitiveProvenance?: { generatedFrom?: unknown };
+      })?.cognitiveProvenance;
+      return freshAction.location_name === oldAction.location_name &&
+        provenance?.generatedFrom === "cognitive_os";
+    }))
+    .map((action) => action.id);
+    const { data: inserted, error: insertError } = await supabase
       .from("auto_actions")
       .insert(actionsToInsert)
       .select(AUTO_ACTION_SELECT);

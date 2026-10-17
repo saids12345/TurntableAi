@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
+import { resolveUniqueConnectedGoogleLocation } from "@/lib/connectedGoogleReviewEvidence";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { requireProForApi } from "@/lib/requirePro";
+import {
+  verifyAutoActionEvidence,
+} from "@/lib/autoActionEvidenceServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +39,8 @@ type AutoActionRow = {
   recommended_payload: Record<string, unknown> | null;
   source_signal: Record<string, unknown> | null;
   status: AutoActionStatus;
+  execution_claim_token?: string | null;
+  execution_claimed_at?: string | null;
   priority_score: number;
   created_at: string;
   updated_at: string;
@@ -43,6 +49,7 @@ type AutoActionRow = {
 type ReviewRow = {
   id: string;
   user_id: string;
+  provider_review_id: string | null;
   location_name: string | null;
   rating: number | null;
   text: string | null;
@@ -370,11 +377,34 @@ async function executeReviewDraftWorkflow(params: {
   const { supabase, userId, locationName, actionType } = params;
   const sinceIso = daysAgoIso(45);
 
+  const { data: connected, error: connectionError } = await supabase
+    .from("review_connections")
+    .select("review_locations(name,title)")
+    .eq("user_id", userId)
+    .eq("provider", "google");
+
+  if (connectionError) {
+    throw new Error("Google review connection verification unavailable");
+  }
+
+  const connectedLocations = (connected ?? []).flatMap((connection) =>
+    Array.isArray(connection.review_locations)
+      ? connection.review_locations
+      : [],
+  );
+  const googleLocationId = resolveUniqueConnectedGoogleLocation(
+    connectedLocations, locationName,
+  );
+  if (!googleLocationId) {
+    throw new Error("Cannot uniquely verify connected Google review location");
+  }
+
   const { data: reviewRows, error: reviewError } = await supabase
     .from("reviews")
-    .select("id, user_id, location_name, rating, text, reviewer_name, update_time")
+    .select("id, user_id, provider_review_id, location_name, rating, text, reviewer_name, update_time")
     .eq("user_id", userId)
-    .eq("location_name", locationName)
+    .eq("provider", "google")
+    .eq("location_name", googleLocationId)
     .lte("rating", 3)
     .gte("update_time", sinceIso)
     .order("update_time", { ascending: false })
@@ -385,21 +415,27 @@ async function executeReviewDraftWorkflow(params: {
     throw new Error("Failed to load reviews for execution");
   }
 
-  const reviews = ((reviewRows ?? []) as ReviewRow[]).filter(
-    (row) => typeof row.id === "string" && row.id.length > 0
-  );
+  // Database filtering is owner/provider/resource scoped. Recheck the
+  // returned identity before any downstream workflow write.
+  const reviews = ((reviewRows ?? []) as ReviewRow[]).filter((row) => {
+    const rating = row.rating;
+    return typeof row.id === "string" && row.id.length > 0 &&
+      row.user_id === userId &&
+      row.location_name === googleLocationId &&
+      typeof row.provider_review_id === "string" &&
+      row.provider_review_id.trim().length > 0 &&
+      typeof rating === "number" &&
+      Number.isFinite(rating) && rating >= 1 && rating <= 3 &&
+      typeof row.update_time === "string" &&
+      Number.isFinite(Date.parse(row.update_time)) &&
+      Date.parse(row.update_time) >= Date.parse(sinceIso) &&
+      Date.parse(row.update_time) <= Date.now();
+  });
 
+  // A no-op is NOT confirmed execution. Keep the durable execution claim
+  // for operator reconciliation rather than recording fabricated work.
   if (!reviews.length) {
-    return {
-      ok: true,
-      actionType,
-      executionSummary:
-        actionType === "service_recovery"
-          ? "No matching low-rated reviews were found for service recovery drafting."
-          : "No matching low-rated reviews were found to draft replies for.",
-      workflowItemsCreated: 0,
-      downstreamRecords: [],
-    } satisfies ExecutionResult;
+    throw new Error("No verified low-rated Google reviews remain for execution");
   }
 
   const now = new Date().toISOString();
@@ -417,8 +453,13 @@ async function executeReviewDraftWorkflow(params: {
   }));
 
   const { data: workflowRows, error: workflowError } = await supabase
-    .from("review_workflow_state")
-    .upsert(workflowPayload, { onConflict: "user_id,review_id" })
+    .from("review_workflow_states")
+    // Insert only. NEVER rewrite a resolved/escalated/drafted workflow or
+    // its owner-edited note/reply, even when requests race.
+    .upsert(workflowPayload, {
+      onConflict: "user_id,review_id",
+      ignoreDuplicates: true,
+    })
     .select("id, user_id, review_id, status, note, suggested_reply, created_at, updated_at");
 
   if (workflowError) {
@@ -427,6 +468,32 @@ async function executeReviewDraftWorkflow(params: {
   }
 
   const rows = (workflowRows ?? []) as ReviewWorkflowRow[];
+
+  // Only newly inserted, owner-scoped rows are proof of execution.
+  // No rows (including all-conflict/no-op saves) must not be reported
+  // as success or marked executed. Keep the durable claim for review.
+  const eligibleReviewIds = new Set(reviews.map((review) => review.id));
+  const returnedReviewIds = new Set<string>();
+  const expectedStatus = actionType === "service_recovery"
+    ? "escalated"
+    : "drafted";
+  const rowsConfirmed = rows.length > 0 && rows.every((row) => {
+    if (
+      typeof row.id !== "string" || !row.id.trim() ||
+      row.user_id !== userId ||
+      typeof row.review_id !== "string" ||
+      !eligibleReviewIds.has(row.review_id) ||
+      returnedReviewIds.has(row.review_id) ||
+      row.status !== expectedStatus
+    ) {
+      return false;
+    }
+    returnedReviewIds.add(row.review_id);
+    return true;
+  });
+  if (!rowsConfirmed) {
+    throw new Error("No verified newly inserted review workflows");
+  }
 
   return {
     ok: true,
@@ -438,7 +505,7 @@ async function executeReviewDraftWorkflow(params: {
     workflowItemsCreated: rows.length,
     downstreamRecords: rows.map((row) => ({
       id: row.id,
-      type: "review_workflow_state",
+      type: "review_workflow_states",
       status: row.status,
       review_id: row.review_id,
     })),
@@ -837,7 +904,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("auto_actions")
       .select(
-        "id, user_id, location_name, action_type, title, reason, recommended_payload, source_signal, status, priority_score, created_at, updated_at"
+        "id, user_id, location_name, action_type, title, reason, recommended_payload, source_signal, status, execution_claim_token, execution_claimed_at, priority_score, created_at, updated_at"
       )
       .eq("user_id", user.id)
       .order("priority_score", { ascending: false })
@@ -852,8 +919,49 @@ export async function GET() {
       );
     }
 
+    const items = (data ?? []) as AutoActionRow[];
+
+    const annotatedItems = await Promise.all(
+      items.map(async (item) => {
+        // Claim tokens are internal coordination secrets; never return them.
+        const { execution_claim_token: _claimToken, ...safeItem } = item;
+
+        if (item.status !== "pending" && item.status !== "approved") {
+          return { ...safeItem, evidenceStatus: "historical" as const };
+        }
+
+        // Status may still be 'approved' after a crash or partial execution.
+        // A durable claim takes precedence over evidence freshness.
+        if (item.execution_claim_token) {
+          return {
+            ...safeItem,
+            evidenceStatus: "reconciliation_required" as const,
+          };
+        }
+
+        try {
+          const verified = await verifyAutoActionEvidence({
+            userId: user.id,
+            locationName: item.location_name,
+            createdAt: item.created_at,
+            sourceSignal: item.source_signal,
+          });
+
+          return {
+            ...safeItem,
+            evidenceStatus: verified
+              ? ("current" as const)
+              : ("unverified" as const),
+          };
+        } catch (error) {
+          console.error("Auto Action evidence check failed:", error);
+          return { ...safeItem, evidenceStatus: "unverified" as const };
+        }
+      }),
+    );
+
     return NextResponse.json({
-      items: (data ?? []) as AutoActionRow[],
+      items: annotatedItems,
       generatedAt: new Date().toISOString(),
       ok: true,
     });
@@ -913,7 +1021,7 @@ export async function PATCH(request: Request) {
     const { data: existing, error: existingError } = await supabase
       .from("auto_actions")
       .select(
-        "id, user_id, location_name, action_type, title, reason, recommended_payload, source_signal, status, priority_score, created_at, updated_at"
+        "id, user_id, location_name, action_type, title, reason, recommended_payload, source_signal, status, execution_claim_token, execution_claimed_at, priority_score, created_at, updated_at"
       )
       .eq("id", id)
       .eq("user_id", user.id)
@@ -936,48 +1044,195 @@ export async function PATCH(request: Request) {
       );
     }
 
-    let executionResult: ExecutionResult | null = null;
-    let outcomeWrite: OutcomeWriteResult | null = null;
-    let memoryWrite: MemoryWriteResult | null = null;
+    if (
+      (nextStatus === "approved" || nextStatus === "executed") &&
+      currentItem.status !== nextStatus
+    ) {
+      const evidenceVerified = await verifyAutoActionEvidence({
+        userId: user.id,
+        locationName: currentItem.location_name,
+        createdAt: currentItem.created_at,
+        sourceSignal: currentItem.source_signal,
+      });
 
-    if (nextStatus === "executed" && currentItem.status !== "executed") {
+      if (!evidenceVerified) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "This recommendation lacks current verified evidence for this restaurant. Generate a fresh recommendation before approving or executing.",
+            code: "AUTO_ACTION_EVIDENCE_UNVERIFIED",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    // A durable claim is never cleared automatically: failures require
+    // reconciliation rather than risking duplicate side effects.
+    if (currentItem.execution_claim_token && currentItem.status !== "executed") {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "AUTO_ACTION_EXECUTION_RECONCILIATION_REQUIRED",
+          error: "An execution claim already exists. Manual reconciliation is required.",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (currentItem.status === nextStatus) {
+      return NextResponse.json({
+        item: {
+          id: currentItem.id,
+          user_id: currentItem.user_id,
+          location_name: currentItem.location_name,
+          action_type: currentItem.action_type,
+          title: currentItem.title,
+          reason: currentItem.reason,
+          recommended_payload: currentItem.recommended_payload,
+          source_signal: currentItem.source_signal,
+          status: currentItem.status,
+          priority_score: currentItem.priority_score,
+          created_at: currentItem.created_at,
+          updated_at: currentItem.updated_at,
+        },
+        executionResult: null,
+        outcomeWrite: null,
+        memoryWrite: null,
+        savedAt: new Date().toISOString(),
+        ok: true,
+      });
+    }
+
+    const selectedFields =
+      "id, user_id, location_name, action_type, title, reason, recommended_payload, source_signal, status, priority_score, created_at, updated_at";
+
+    if (nextStatus !== "executed") {
+      // Conditional mutation also prevents dismissal/approval racing an
+      // execution claim after the initial row read.
+      const { data, error } = await supabase
+        .from("auto_actions")
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .eq("status", currentItem.status)
+        .is("execution_claim_token", null)
+        .select(selectedFields)
+        .maybeSingle();
+
+      if (error) {
+        console.error("auto-actions PATCH conditional update failed:", error);
+        return NextResponse.json(
+          { error: "Failed to update auto action" },
+          { status: 500 },
+        );
+      }
+      if (!data) {
+        return NextResponse.json(
+          { ok: false, code: "AUTO_ACTION_STATUS_CONFLICT", error: "Action changed during update. Refresh first." },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json({
+        item: data as AutoActionRow,
+        executionResult: null,
+        outcomeWrite: null,
+        memoryWrite: null,
+        savedAt: new Date().toISOString(),
+        ok: true,
+      });
+    }
+
+    // Only an approved, unclaimed action can acquire an execution claim.
+    // PostgreSQL's conditional UPDATE makes simultaneous attempts single-winner.
+    const claimToken = globalThis.crypto.randomUUID();
+    const { data: claimed, error: claimError } = await supabase
+      .from("auto_actions")
+      .update({
+        execution_claim_token: claimToken,
+        execution_claimed_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .eq("status", "approved")
+      .is("execution_claim_token", null)
+      .select("id")
+      .maybeSingle();
+
+    if (claimError) {
+      console.error("auto-actions PATCH execution claim failed:", claimError);
+      return NextResponse.json(
+        { error: "Could not claim auto action for execution" },
+        { status: 500 },
+      );
+    }
+    if (!claimed) {
+      return NextResponse.json(
+        { ok: false, code: "AUTO_ACTION_EXECUTION_ALREADY_CLAIMED", error: "This action was already claimed or changed." },
+        { status: 409 },
+      );
+    }
+
+    let executionResult: ExecutionResult;
+    let outcomeWrite: OutcomeWriteResult;
+    let memoryWrite: MemoryWriteResult;
+
+    try {
       executionResult = await applyExecutionSideEffects({
         supabase,
         item: currentItem,
       });
+      if (!executionResult.ok) {
+        throw new Error("Execution did not confirm success");
+      }
 
       outcomeWrite = await recordExecutionOutcome({
         supabase,
         item: currentItem,
         executionResult,
       });
-
       memoryWrite = await recordOperatorMemory({
         supabase,
         item: currentItem,
         executionResult,
       });
+      if (!outcomeWrite.ok || !memoryWrite.ok) {
+        throw new Error("Execution records could not be confirmed");
+      }
+    } catch (error) {
+      // Do not release the claim: some external/database effects may have
+      // succeeded before the failure. An operator must reconcile first.
+      console.error("auto-actions execution requires reconciliation:", error);
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "AUTO_ACTION_EXECUTION_RECONCILIATION_REQUIRED",
+          error: "Execution is uncertain; manual reconciliation is required before retrying.",
+        },
+        { status: 500 },
+      );
     }
 
     const { data, error } = await supabase
       .from("auto_actions")
-      .update({
-        status: nextStatus,
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status: "executed", updated_at: new Date().toISOString() })
       .eq("id", id)
       .eq("user_id", user.id)
-      .select(
-        "id, user_id, location_name, action_type, title, reason, recommended_payload, source_signal, status, priority_score, created_at, updated_at"
-      )
-      .single();
+      .eq("status", "approved")
+      .eq("execution_claim_token", claimToken)
+      .select(selectedFields)
+      .maybeSingle();
 
-    if (error) {
-      console.error("auto-actions PATCH update error:", error);
-
+    if (error || !data) {
+      console.error("auto-actions execution finalization failed:", error);
       return NextResponse.json(
-        { error: `Failed to update auto action: ${error.message}` },
-        { status: 500 }
+        {
+          ok: false,
+          code: "AUTO_ACTION_EXECUTION_RECONCILIATION_REQUIRED",
+          error: "Execution occurred but final status is unconfirmed. Manual reconciliation is required.",
+        },
+        { status: 500 },
       );
     }
 

@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { TRUSTED_PERFORMANCE_SOURCES } from "@/lib/performanceSignalTrust";
+import { loadSquareProductionConnections } from "@/lib/squareConnectionReader";
+import { verifySquarePerformanceRow } from "@/lib/verifiedSquarePerformance";
 import { getSupabaseRouteClient } from "@/lib/supabaseRoute";
 import { requireProForApi } from "@/lib/requirePro";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type HealthStatus = "healthy" | "watch" | "risk";
+type HealthStatus = "healthy" | "watch" | "risk" | "unknown";
 type PerfSeverity = "low" | "medium" | "high";
 type AlertType = "revenue" | "aov" | "labor" | "margin" | "reviews";
 type ActionStatus = "pending" | "in_progress" | "done";
@@ -23,6 +25,8 @@ type ReviewRow = {
 type PerformanceSignalRow = {
   id: string;
   location_name: string;
+  source_system: string | null;
+  source_record_id: string | null;
   revenue: number | null;
   orders: number | null;
   avg_ticket: number | null;
@@ -37,16 +41,16 @@ type LocationPerformance = {
   name: string;
   city: string;
   health: HealthStatus;
-  revenueToday: number;
-  revenueDeltaPct: number;
-  ordersToday: number;
-  ordersDeltaPct: number;
-  aov: number;
-  aovDeltaPct: number;
-  laborPct: number;
-  marginPct: number;
-  avgRating: number;
-  refunds: number;
+  revenueToday: number | null;
+  revenueDeltaPct: number | null;
+  ordersToday: number | null;
+  ordersDeltaPct: number | null;
+  aov: number | null;
+  aovDeltaPct: number | null;
+  laborPct: number | null;
+  marginPct: number | null;
+  avgRating: number | null;
+  refunds: number | null;
   topIssue: string | null;
   recommendedAction: string | null;
 };
@@ -87,6 +91,19 @@ function numOrZero(value: unknown) {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+function numOrNull(value: unknown, allowNegative = false): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && (allowNegative || value >= 0) ? value : null;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && (allowNegative || parsed >= 0) ? parsed : null;
+  }
+
+  return null;
 }
 
 function avg(values: number[]) {
@@ -146,27 +163,51 @@ function detectTopIssue(texts: string[]) {
   return null;
 }
 
+function measuredAtLeast(
+  value: number | null,
+  threshold: number,
+): boolean {
+  return value !== null && value >= threshold;
+}
+
+function changePct(current: number | null, previous: number | null): number | null {
+  if (current === null || previous === null || previous <= 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function pctAtMost(value: number | null, threshold: number): value is number {
+  return value !== null && value <= threshold;
+}
+
+function pctBelow(value: number | null, threshold: number): value is number {
+  return value !== null && value < threshold;
+}
+
+function ratingBelow(value: number | null, threshold: number): boolean {
+  return value !== null && value < threshold;
+}
+
 function recommendedAction(params: {
-  revenueDeltaPct: number;
-  laborPct: number;
-  avgRating: number;
+  revenueDeltaPct: number | null;
+  laborPct: number | null;
+  avgRating: number | null;
   topIssue: string | null;
 }) {
   const { revenueDeltaPct, laborPct, avgRating, topIssue } = params;
 
-  if (revenueDeltaPct <= -8 && laborPct >= 24) {
+  if (pctAtMost(revenueDeltaPct, -8) && measuredAtLeast(laborPct, 24)) {
     return "Launch a traffic recovery move and tighten labor coverage immediately.";
   }
 
-  if (revenueDeltaPct < 0) {
+  if (pctBelow(revenueDeltaPct, 0)) {
     return "Review demand softness and push a targeted recovery offer.";
   }
 
-  if (laborPct >= 24) {
+  if (measuredAtLeast(laborPct, 24)) {
     return "Reduce labor drag during slow windows and rebalance staffing.";
   }
 
-  if (avgRating < 4) {
+  if (ratingBelow(avgRating, 4)) {
     return "Address guest complaints fast and stabilize service execution.";
   }
 
@@ -178,14 +219,17 @@ function recommendedAction(params: {
 }
 
 function deriveHealth(params: {
-  revenueDeltaPct: number;
-  laborPct: number;
-  avgRating: number;
+  revenueDeltaPct: number | null;
+  laborPct: number | null;
+  avgRating: number | null;
 }): HealthStatus {
   const { revenueDeltaPct, laborPct, avgRating } = params;
 
-  if (revenueDeltaPct <= -8 || laborPct >= 25 || avgRating < 4) return "risk";
-  if (revenueDeltaPct < 0 || laborPct >= 22 || avgRating < 4.4) return "watch";
+  if (pctAtMost(revenueDeltaPct, -8) || measuredAtLeast(laborPct, 25) || ratingBelow(avgRating, 4)) return "risk";
+  if (pctBelow(revenueDeltaPct, 0) || measuredAtLeast(laborPct, 22) || ratingBelow(avgRating, 4.4)) return "watch";
+  if (revenueDeltaPct === null || laborPct === null || avgRating === null) {
+    return "unknown";
+  }
   return "healthy";
 }
 
@@ -207,51 +251,51 @@ function buildPriority(params: {
     reasons.push("location on watch");
   }
 
-  if (location.revenueDeltaPct <= -10) {
+  if (pctAtMost(location.revenueDeltaPct, -10)) {
     score += 28;
     reasons.push("double-digit revenue decline");
-  } else if (location.revenueDeltaPct <= -8) {
+  } else if (pctAtMost(location.revenueDeltaPct, -8)) {
     score += 22;
     reasons.push("strong revenue decline");
-  } else if (location.revenueDeltaPct < 0) {
+  } else if (pctBelow(location.revenueDeltaPct, 0)) {
     score += 10;
   }
 
-  if (location.ordersDeltaPct <= -8) {
+  if (pctAtMost(location.ordersDeltaPct, -8)) {
     score += 12;
     reasons.push("orders dropping");
-  } else if (location.ordersDeltaPct < 0) {
+  } else if (pctBelow(location.ordersDeltaPct, 0)) {
     score += 5;
   }
 
-  if (location.aovDeltaPct <= -5) {
+  if (pctAtMost(location.aovDeltaPct, -5)) {
     score += 10;
     reasons.push("average ticket weakening");
-  } else if (location.aovDeltaPct < 0) {
+  } else if (pctBelow(location.aovDeltaPct, 0)) {
     score += 4;
   }
 
-  if (location.laborPct >= 26) {
+  if (measuredAtLeast(location.laborPct, 26)) {
     score += 22;
     reasons.push("labor materially above target");
-  } else if (location.laborPct >= 24) {
+  } else if (measuredAtLeast(location.laborPct, 24)) {
     score += 14;
     reasons.push("labor above target");
-  } else if (location.laborPct >= 22) {
+  } else if (measuredAtLeast(location.laborPct, 22)) {
     score += 6;
   }
 
-  if (location.avgRating < 4) {
+  if (ratingBelow(location.avgRating, 4)) {
     score += 20;
     reasons.push("rating below 4.0");
-  } else if (location.avgRating < 4.2) {
+  } else if (ratingBelow(location.avgRating, 4.2)) {
     score += 10;
   }
 
-  if (location.refunds >= 50) {
+  if (location.refunds !== null && location.refunds >= 50) {
     score += 10;
     reasons.push("refund pressure");
-  } else if (location.refunds >= 25) {
+  } else if (location.refunds !== null && location.refunds >= 25) {
     score += 5;
   }
 
@@ -260,10 +304,10 @@ function buildPriority(params: {
     reasons.push("guest friction detected");
   }
 
-  if (type === "revenue" && location.revenueDeltaPct <= -8) score += 10;
-  if (type === "labor" && location.laborPct >= 24) score += 10;
-  if (type === "reviews" && (location.avgRating < 4.1 || location.topIssue)) score += 10;
-  if (type === "margin" && location.marginPct >= 66) score -= 18;
+  if (type === "revenue" && pctAtMost(location.revenueDeltaPct, -8)) score += 10;
+  if (type === "labor" && measuredAtLeast(location.laborPct, 24)) score += 10;
+  if (type === "reviews" && (ratingBelow(location.avgRating, 4.1) || location.topIssue)) score += 10;
+  if (type === "margin" && measuredAtLeast(location.marginPct, 66)) score -= 18;
 
   if (status === "pending") {
     score += 8;
@@ -299,106 +343,105 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const sinceIso = daysAgoIso(45);
-
-    const [
-      { data: performanceRows, error: performanceError },
-      { data: reviewRows, error: reviewError },
-    ] = await Promise.all([
-      supabase
-        .from("performance_signal_history")
-        .select(
-          "id, location_name, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
-        )
-        .eq("user_id", user.id)
-        .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
-        .order("captured_at", { ascending: false }),
-      supabase
-        .from("reviews")
-        .select("id, location_name, rating, text, update_time")
-        .eq("user_id", user.id)
-        .gte("update_time", sinceIso)
-        .order("update_time", { ascending: false }),
-    ]);
+    // A Google Business Profile location has no verified cross-provider link to
+    // this Square location yet. Only fetch Square performance here; do not join
+    // reviews by display name or present unverifiable review-derived insights.
+    const { data: performanceRows, error: performanceError } = await supabase
+      .from("performance_signal_history")
+      .select(
+        "id, location_name, source_system, source_record_id, revenue, orders, avg_ticket, labor_pct, margin_pct, refunds, captured_at"
+      )
+      .eq("user_id", user.id)
+      .in("source_system", [...TRUSTED_PERFORMANCE_SOURCES])
+      .order("captured_at", { ascending: false });
 
     if (performanceError) {
       console.error("operator-snapshot/performance performance error:", performanceError);
       return NextResponse.json({ error: "Failed to load performance data" }, { status: 500 });
     }
 
-    if (reviewError) {
-      console.error("operator-snapshot/performance reviews error:", reviewError);
-      return NextResponse.json({ error: "Failed to load review data" }, { status: 500 });
-    }
-
-    const perf = (performanceRows ?? []) as PerformanceSignalRow[];
-    const reviews = (reviewRows ?? []) as ReviewRow[];
+    const connections = await loadSquareProductionConnections(user.id);
+    const perf = ((performanceRows ?? []) as PerformanceSignalRow[])
+      .map((row) => verifySquarePerformanceRow(row, user.id, connections))
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
     const groupedPerf = new Map<
       string,
-      { latest: PerformanceSignalRow | null; previous: PerformanceSignalRow | null }
+      { locationName: string; latest: PerformanceSignalRow | null; previous: PerformanceSignalRow | null }
     >();
 
-    for (const row of perf) {
-      const key = row.location_name;
+    for (const verified of perf) {
+      const row = verified.row;
+      const key = verified.connectionKey;
       const existing = groupedPerf.get(key);
 
       if (!existing) {
-        groupedPerf.set(key, { latest: row, previous: null });
+        groupedPerf.set(key, { locationName: verified.locationName, latest: row, previous: null });
         continue;
       }
 
       if (!existing.previous) {
-        groupedPerf.set(key, { latest: existing.latest, previous: row });
+        groupedPerf.set(key, { locationName: existing.locationName, latest: existing.latest, previous: row });
       }
     }
 
-    const locations: LocationPerformance[] = Array.from(groupedPerf.entries()).map(
-      ([locationName, pair], index) => {
+    const nowMs = Date.now();
+    const maxSnapshotAgeMs = 72 * 60 * 60 * 1000;
+    const locations: LocationPerformance[] = Array.from(groupedPerf.entries())
+      .filter(([, pair]) => {
+        const capturedMs = Date.parse(pair.latest?.captured_at ?? "");
+        return Number.isFinite(capturedMs) &&
+          capturedMs <= nowMs &&
+          nowMs - capturedMs <= maxSnapshotAgeMs;
+      })
+      .map(
+      ([, pair], index) => {
+        const locationName = pair.locationName;
         const latest = pair.latest;
         const previous = pair.previous;
 
-        const revenueToday = numOrZero(latest?.revenue);
-        const ordersToday = numOrZero(latest?.orders);
-        const aov = numOrZero(latest?.avg_ticket);
-        const laborPct = numOrZero(latest?.labor_pct);
-        const marginPct = numOrZero(latest?.margin_pct);
-        const refunds = numOrZero(latest?.refunds);
+        const revenueToday = numOrNull(latest?.revenue);
+        const ordersToday = numOrNull(latest?.orders);
+        const aov = numOrNull(latest?.avg_ticket);
+        const laborPct = numOrNull(latest?.labor_pct);
+        const marginPct = numOrNull(latest?.margin_pct, true);
+        const refunds = numOrNull(latest?.refunds);
 
-        const previousRevenue = numOrZero(previous?.revenue);
-        const previousOrders = numOrZero(previous?.orders);
-        const previousAov = numOrZero(previous?.avg_ticket);
+        const previousRevenue = numOrNull(previous?.revenue);
+        const previousOrders = numOrNull(previous?.orders);
+        const previousAov = numOrNull(previous?.avg_ticket);
 
-        const revenueDeltaPct =
-          previousRevenue > 0
-            ? Math.round(((revenueToday - previousRevenue) / previousRevenue) * 100)
-            : 0;
-        const ordersDeltaPct =
-          previousOrders > 0
-            ? Math.round(((ordersToday - previousOrders) / previousOrders) * 100)
-            : 0;
-        const aovDeltaPct =
-          previousAov > 0 ? Math.round(((aov - previousAov) / previousAov) * 100) : 0;
+        const latestSource = latest?.source_record_id ?? "";
+        const previousSource = previous?.source_record_id ?? "";
+        const latestCapturedMs = Date.parse(latest?.captured_at ?? "");
+        const previousCapturedMs = Date.parse(previous?.captured_at ?? "");
+        const comparisonGapMs = latestCapturedMs - previousCapturedMs;
 
-        const locationReviews = reviews.filter((r) => r.location_name === locationName);
-        const ratedValues = locationReviews
-          .map((r) => (typeof r.rating === "number" ? r.rating : null))
-          .filter((v): v is number => v !== null);
+        const comparablePeriods =
+          latestSource.length > 10 &&
+          previousSource.length > 10 &&
+          latestSource.slice(0, -10) === previousSource.slice(0, -10) &&
+          latestSource.slice(-10) > previousSource.slice(-10) &&
+          Number.isFinite(comparisonGapMs) &&
+          comparisonGapMs > 0 &&
+          comparisonGapMs <= 72 * 60 * 60 * 1000;
 
-        const avgRatingRaw = avg(ratedValues);
-        const avgRating = avgRatingRaw !== null ? Number(avgRatingRaw.toFixed(1)) : 4.5;
+        const revenueDeltaPct = comparablePeriods
+          ? changePct(revenueToday, previousRevenue) : null;
+        const ordersDeltaPct = comparablePeriods
+          ? changePct(ordersToday, previousOrders) : null;
+        const aovDeltaPct = comparablePeriods
+          ? changePct(aov, previousAov) : null;
 
-        const negativeTexts = locationReviews
-          .filter((r) => typeof r.rating === "number" && r.rating <= 3)
-          .map((r) => r.text ?? "");
-
-        const topIssue = detectTopIssue(negativeTexts);
+        // Cross-provider identity is not established: missing, not zero or healthy.
+        const avgRating: number | null = null;
+        const topIssue: string | null = null;
         const health = deriveHealth({ revenueDeltaPct, laborPct, avgRating });
 
         return {
           id: `live_perf_${index + 1}`,
           name: locationName,
-          city: "San Diego",
+          city: "",
           health,
           revenueToday,
           revenueDeltaPct,
@@ -411,7 +454,7 @@ export async function GET() {
           avgRating,
           refunds,
           topIssue,
-          recommendedAction: recommendedAction({
+          recommendedAction: health === "unknown" ? null : recommendedAction({
             revenueDeltaPct,
             laborPct,
             avgRating,
@@ -422,7 +465,7 @@ export async function GET() {
     );
 
     const sortedLocations = [...locations].sort((a, b) => {
-      const rank: Record<HealthStatus, number> = { risk: 0, watch: 1, healthy: 2 };
+      const rank: Record<HealthStatus, number> = { risk: 0, watch: 1, unknown: 2, healthy: 3 };
       return rank[a.health] - rank[b.health];
     });
 
@@ -430,7 +473,7 @@ export async function GET() {
       .flatMap((location) => {
         const items: PerformanceAlert[] = [];
 
-        if (location.revenueDeltaPct <= -8) {
+        if (pctAtMost(location.revenueDeltaPct, -8)) {
           items.push({
             id: `alert-revenue-${location.id}`,
             locationName: location.name,
@@ -442,11 +485,11 @@ export async function GET() {
           });
         }
 
-        if (location.laborPct >= 24) {
+        if (measuredAtLeast(location.laborPct, 24)) {
           items.push({
             id: `alert-labor-${location.id}`,
             locationName: location.name,
-            severity: location.laborPct >= 26 ? "high" : "medium",
+            severity: measuredAtLeast(location.laborPct, 26) ? "high" : "medium",
             type: "labor",
             title: "Labor above target",
             description: "Labor is running high versus an efficient operating range.",
@@ -454,11 +497,11 @@ export async function GET() {
           });
         }
 
-        if (location.avgRating < 4.1 || location.topIssue) {
+        if (ratingBelow(location.avgRating, 4.1) || location.topIssue) {
           items.push({
             id: `alert-reviews-${location.id}`,
             locationName: location.name,
-            severity: location.avgRating < 4 ? "high" : "medium",
+            severity: ratingBelow(location.avgRating, 4) ? "high" : "medium",
             type: "reviews",
             title: "Guest sentiment pressure",
             description:
@@ -467,7 +510,7 @@ export async function GET() {
           });
         }
 
-        if (location.marginPct >= 66) {
+        if (measuredAtLeast(location.marginPct, 66)) {
           items.push({
             id: `alert-margin-${location.id}`,
             locationName: location.name,
@@ -484,61 +527,7 @@ export async function GET() {
       .sort((a, b) => b.priorityScore - a.priorityScore)
       .slice(0, 8);
 
-    const actions: PerformanceAction[] = sortedLocations
-      .flatMap((location) => {
-        const items: PerformanceAction[] = [];
-
-        if (location.revenueDeltaPct <= -8) {
-          const status: ActionStatus = "pending";
-          items.push({
-            id: `action-revenue-${location.id}`,
-            locationName: location.name,
-            title: "Run revenue recovery plan",
-            reason: "Sales trend is weak enough to need immediate intervention.",
-            status,
-            ...buildPriority({ location, type: "revenue", status }),
-          });
-        }
-
-        if (location.laborPct >= 24) {
-          const status: ActionStatus = "pending";
-          items.push({
-            id: `action-labor-${location.id}`,
-            locationName: location.name,
-            title: "Reduce labor drag",
-            reason: "Labor is elevated and may be compressing performance.",
-            status,
-            ...buildPriority({ location, type: "labor", status }),
-          });
-        }
-
-        if (location.avgRating < 4.1 || location.topIssue) {
-          const status: ActionStatus = "in_progress";
-          items.push({
-            id: `action-review-${location.id}`,
-            locationName: location.name,
-            title: "Fix guest friction fast",
-            reason: location.topIssue ?? "Negative guest signals should be addressed quickly.",
-            status,
-            ...buildPriority({ location, type: "reviews", status }),
-          });
-        }
-
-        if (location.health === "healthy" && location.marginPct >= 64) {
-          const status: ActionStatus = "done";
-          items.push({
-            id: `action-growth-${location.id}`,
-            locationName: location.name,
-            title: "Test a margin-friendly growth play",
-            reason: "This location is stable enough for a low-risk experiment.",
-            status,
-            ...buildPriority({ location, type: "margin", status }),
-          });
-        }
-
-        return items;
-      })
-      .sort((a, b) => b.priorityScore - a.priorityScore);
+    const actions: PerformanceAction[] = [];
 
     return NextResponse.json({
       locations: sortedLocations,
