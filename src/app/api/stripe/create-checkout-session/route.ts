@@ -8,6 +8,9 @@ import {
   findReusableStripeCheckoutUrl,
   shouldBlockNewStripeCheckout,
 } from "@/lib/stripeCheckoutPolicy";
+import {
+  isExpectedTurnTableCheckoutPrice,
+} from "@/lib/stripePricePolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +63,38 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { ok: false, error: "Not authenticated" },
         { status: 401 }
+      );
+    }
+
+    // Validate real Stripe pricing before any customer or
+    // checkout session is created or reused.
+    const checkoutPrice = await stripe.prices.retrieve(
+      priceId,
+      { expand: ["product"] },
+    );
+
+    const expectedLiveMode =
+      process.env.VERCEL_ENV === "production"
+        ? true
+        : process.env.VERCEL_ENV === "preview"
+          ? false
+          : null;
+
+    if (
+      !isExpectedTurnTableCheckoutPrice(
+        checkoutPrice,
+        priceId,
+        expectedLiveMode,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "PRICE_NOT_VERIFIED",
+          error:
+            "Subscription pricing could not be verified. Please contact support.",
+        },
+        { status: 503 },
       );
     }
 
