@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { isAllowedStripeStatus } from "@/lib/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,7 +156,7 @@ function getSupabaseUserIdFromMetadata(obj: any): string | null {
 
 // ✅ LOCK on past_due
 function computeIsPro(status: unknown): boolean {
-  return status === "trialing" || status === "active";
+  return typeof status === "string" && isAllowedStripeStatus(status);
 }
 
 function getCustomerIdFromObj(obj: any): string | null {
