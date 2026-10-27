@@ -776,6 +776,31 @@ export function resolveRestaurantStateLocationNames(
     : [];
 }
 
+export function collectRestaurantDataLocationNames(
+  performanceLocations: Array<string | null>,
+  reviewLocations: Array<string | null>,
+  requestedLocationName?: string | null,
+): string[] {
+  return Array.from(
+    new Set(
+      [
+        ...performanceLocations,
+        ...reviewLocations,
+      ]
+        .filter(
+          (value): value is string =>
+            typeof value === "string" &&
+            value.trim().length > 0,
+        )
+        .filter(
+          (name) =>
+            !requestedLocationName ||
+            sameLocation(name, requestedLocationName),
+        ),
+    ),
+  );
+}
+
 export async function getRestaurantStates(params: {
   userId: string;
   locationName?: string | null;
@@ -822,18 +847,18 @@ export async function getRestaurantStates(params: {
     "operator memory",
   );
 
-  const locationNames = Array.from(
-    new Set(
-      [
-        ...performanceRows.map((row) => row.location_name),
-        ...reviews.map((row) => row.location_name),
-        ...actions.map((row) => row.location_name),
-        ...memory.map((row) => row.location_name),
-      ]
-        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-        .filter((name) => !locationName || sameLocation(name, locationName)),
-    ),
-  );
+  const locationNames =
+    collectRestaurantDataLocationNames(
+      performanceRows.map((row) => row.location_name),
+      reviews.map((row) => row.location_name),
+      locationName,
+    );
+
+  // A requested name alone is not evidence that a restaurant exists.
+  // Never construct an operational state without source records.
+  if (locationNames.length === 0) {
+    return [];
+  }
 
   const names =
     resolveRestaurantStateLocationNames(

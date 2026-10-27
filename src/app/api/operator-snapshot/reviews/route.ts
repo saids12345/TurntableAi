@@ -337,7 +337,7 @@ export async function GET() {
         .gte("update_time", sinceIso)
         .order("update_time", { ascending: false }),
       supabase
-        .from("review_workflow_state")
+        .from("review_workflow_states")
         .select(
           "id, user_id, review_id, status, note, suggested_reply, created_at, updated_at"
         )

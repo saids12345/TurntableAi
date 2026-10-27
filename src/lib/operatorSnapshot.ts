@@ -831,7 +831,7 @@ export async function getOperatorSnapshot(userId: string) {
     return {
       id: matchingLocation?.id ?? `live-${index + 1}`,
       name: matchingLocation?.displayName ?? locationName,
-      city: "San Diego",
+      city: "",
       health,
       salesDeltaPct,
       reviewIssueCount: negativeReviews.length,
