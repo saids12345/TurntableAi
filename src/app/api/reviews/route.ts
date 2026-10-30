@@ -26,8 +26,10 @@ type DbReviewRow = {
   rating: number | null;
   text: string | null;
   update_time: string | null;
-  platform: string | null;
-  owner_reply: string | null;
+  create_time: string | null;
+  provider: string | null;
+  author: string | null;
+  status: string | null;
 };
 
 type WorkflowRow = {
@@ -170,23 +172,10 @@ function inferIssueType(text: string): IssueType {
 }
 
 function inferStatus(row: DbReviewRow): ReviewStatus {
-  const rating = typeof row.rating === "number" ? row.rating : 0;
-  const text = (row.text ?? "").toLowerCase();
-  const hasReply = Boolean(row.owner_reply && row.owner_reply.trim());
-
-  if (hasReply && rating >= 4) return "resolved";
-  if (hasReply) return "drafted";
-
-  if (
-    rating <= 2 ||
-    text.includes("manager") ||
-    text.includes("owner") ||
-    text.includes("refund") ||
-    text.includes("never again")
-  ) {
-    return "escalated";
+  // Only recorded workflow/review status may claim an action happened.
+  if (row.status === "drafted" || row.status === "escalated" || row.status === "resolved") {
+    return row.status;
   }
-
   return "new";
 }
 
@@ -216,7 +205,10 @@ function buildSuggestedReply(params: {
 }
 
 function normalizePlatform(value: string | null): Platform {
-  return value === "Yelp" ? "Yelp" : "Google";
+  const provider = (value ?? "").trim().toLowerCase();
+  if (provider === "google") return "Google";
+  if (provider === "yelp") return "Yelp";
+  throw new Error("Unsupported review provider");
 }
 
 function buildPriority(params: {
@@ -330,7 +322,7 @@ export async function GET() {
       supabase
         .from("reviews")
         .select(
-          "id, location_name, reviewer_name, rating, text, update_time, platform, owner_reply"
+          "id, location_name, reviewer_name, author, rating, text, update_time, create_time, provider, status"
         )
         .eq("user_id", user.id)
         .gte("update_time", sinceIso)
@@ -361,7 +353,7 @@ export async function GET() {
     const items: ReviewApiItem[] = ((reviewsData ?? []) as DbReviewRow[]).map((row) => {
       const rating = typeof row.rating === "number" ? row.rating : 0;
       const reviewText = row.text?.trim() || "No review text available.";
-      const reviewerName = row.reviewer_name?.trim() || "Guest";
+      const reviewerName = row.reviewer_name?.trim() || row.author?.trim() || "Guest";
       const issueType = inferIssueType(reviewText);
       const defaultSuggestedReply = buildSuggestedReply({
         reviewerName,
@@ -370,7 +362,7 @@ export async function GET() {
       const workflow = workflowMap.get(row.id);
       const status = workflow?.status ?? inferStatus(row);
       const severity = inferSeverity(rating, reviewText);
-      const createdAt = row.update_time || new Date().toISOString();
+      const createdAt = row.update_time || row.create_time || new Date().toISOString();
       const priority = buildPriority({
         rating,
         severity,
@@ -384,7 +376,7 @@ export async function GET() {
       return {
         id: row.id,
         locationName: row.location_name?.trim() || "Unknown Location",
-        platform: normalizePlatform(row.platform),
+        platform: normalizePlatform(row.provider),
         reviewerName,
         rating,
         reviewText,
@@ -393,7 +385,7 @@ export async function GET() {
         status,
         issueType,
         suggestedReply:
-          workflow?.suggested_reply?.trim() || row.owner_reply?.trim() || defaultSuggestedReply,
+          workflow?.suggested_reply?.trim() || defaultSuggestedReply,
         note: workflow?.note ?? "",
         priorityScore: priority.priorityScore,
         priorityLabel: priority.priorityLabel,
