@@ -37,18 +37,7 @@ type ReviewItem = {
   priorityReason: string;
 };
 
-type LiveReviewRow = {
-  id: string;
-  location_name: string | null;
-  rating: number | null;
-  text: string | null;
-  reviewer_name?: string | null;
-  author_name?: string | null;
-  source?: string | null;
-  platform?: string | null;
-  create_time?: string | null;
-  update_time?: string | null;
-};
+type LiveReviewRow = ReviewItem;
 
 type WorkflowStateRow = {
   id: string;
@@ -60,123 +49,6 @@ type WorkflowStateRow = {
   created_at: string;
   updated_at: string;
 };
-
-const INITIAL_REVIEWS: ReviewItem[] = [
-  {
-    id: "rev_1",
-    locationName: "Mira Mesa",
-    platform: "Google",
-    reviewerName: "Sarah M.",
-    rating: 2,
-    reviewText:
-      "Coffee was okay but the wait took way too long and the staff looked overwhelmed. Definitely not the usual experience I expected.",
-    createdAt: "2026-03-09T08:20:00.000Z",
-    severity: "high",
-    status: "new",
-    issueType: "wait_time",
-    suggestedReply:
-      "Thanks for sharing this feedback, Sarah. We’re sorry the wait felt longer than it should have. We’re reviewing service flow with the team and would appreciate the chance to make this right — please reach out to us directly.",
-    note: "",
-    priorityScore: 82,
-    priorityLabel: "high",
-    priorityReason: "2-star review, high severity, not handled yet, very recent",
-  },
-  {
-    id: "rev_2",
-    locationName: "Escondido",
-    platform: "Google",
-    reviewerName: "Daniel R.",
-    rating: 1,
-    reviewText:
-      "Order came out wrong and nobody fixed it properly. Really frustrating experience.",
-    createdAt: "2026-03-09T07:10:00.000Z",
-    severity: "high",
-    status: "drafted",
-    issueType: "wrong_order",
-    suggestedReply:
-      "Daniel, we’re sorry to hear your order was not handled correctly. That’s not the experience we want anyone to have. Please contact us directly so we can follow up and make this right.",
-    note: "Draft ready. Needs manager approval before posting.",
-    priorityScore: 88,
-    priorityLabel: "urgent",
-    priorityReason: "1-star review, high severity, sensitive issue type, very recent",
-  },
-  {
-    id: "rev_3",
-    locationName: "La Jolla",
-    platform: "Yelp",
-    reviewerName: "Tina K.",
-    rating: 4,
-    reviewText:
-      "Nice atmosphere and friendly team. Drink was good, but it took a bit longer than expected.",
-    createdAt: "2026-03-08T18:30:00.000Z",
-    severity: "medium",
-    status: "new",
-    issueType: "wait_time",
-    suggestedReply:
-      "Thanks for the kind words, Tina — we’re glad you enjoyed the atmosphere and your drink. We also appreciate the note on timing and are working to keep service faster and smoother.",
-    note: "",
-    priorityScore: 28,
-    priorityLabel: "low",
-    priorityReason: "not handled yet",
-  },
-  {
-    id: "rev_4",
-    locationName: "Chula Vista",
-    platform: "Google",
-    reviewerName: "Leo P.",
-    rating: 5,
-    reviewText:
-      "Great service, clean space, and the latte was excellent. Will be back.",
-    createdAt: "2026-03-08T14:05:00.000Z",
-    severity: "low",
-    status: "resolved",
-    issueType: "general",
-    suggestedReply:
-      "Thank you so much, Leo. We’re glad you enjoyed the service, the space, and your latte. We appreciate the support and look forward to seeing you again soon.",
-    note: "Resolved. Positive review handled.",
-    priorityScore: 0,
-    priorityLabel: "low",
-    priorityReason: "low operational urgency",
-  },
-  {
-    id: "rev_5",
-    locationName: "Mira Mesa",
-    platform: "Yelp",
-    reviewerName: "Amina H.",
-    rating: 2,
-    reviewText:
-      "The pastries tasted stale and the place didn’t feel very clean this visit.",
-    createdAt: "2026-03-08T11:42:00.000Z",
-    severity: "high",
-    status: "escalated",
-    issueType: "cleanliness",
-    suggestedReply:
-      "Amina, we’re sorry this visit missed the mark. Your feedback on freshness and cleanliness is important, and we’re reviewing it with the team immediately. Please reach out directly so we can follow up with you.",
-    note: "Escalated to owner. Needs in-store follow-up.",
-    priorityScore: 95,
-    priorityLabel: "urgent",
-    priorityReason: "2-star review, high severity, already escalated, sensitive issue type",
-  },
-  {
-    id: "rev_6",
-    locationName: "Escondido",
-    platform: "Google",
-    reviewerName: "Marcus J.",
-    rating: 3,
-    reviewText:
-      "Food was decent but pricing feels a bit high for the portion size.",
-    createdAt: "2026-03-08T09:18:00.000Z",
-    severity: "medium",
-    status: "new",
-    issueType: "pricing",
-    suggestedReply:
-      "Thanks for taking the time to share this, Marcus. We appreciate the honest feedback on value and portion size, and we’ll keep it in mind as we review the guest experience.",
-    note: "",
-    priorityScore: 44,
-    priorityLabel: "normal",
-    priorityReason: "3-star review, not handled yet",
-  },
-];
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -496,43 +368,23 @@ function buildPriority(params: {
   };
 }
 
-function normalizeLiveReview(row: LiveReviewRow): ReviewItem {
-  const rating = typeof row.rating === "number" ? row.rating : 0;
-  const reviewText = row.text?.trim() || "No review text available.";
-  const reviewerName = row.reviewer_name?.trim() || row.author_name?.trim() || "Guest";
-  const issueType = detectIssueType(reviewText, rating);
-  const severity = deriveSeverity(rating, reviewText);
-  const createdAt = row.update_time || row.create_time || new Date().toISOString();
-  const priority = buildPriority({
-    rating,
-    severity,
-    status: "new",
-    issueType,
-    createdAt,
-    reviewText,
-  });
-
-  return {
-    id: row.id,
-    locationName: row.location_name?.trim() || "Unknown location",
-    platform: normalizePlatform(row.platform || row.source),
-    reviewerName,
-    rating,
-    reviewText,
-    createdAt,
-    severity,
-    status: "new",
-    issueType,
-    suggestedReply: deriveSuggestedReply({
-      reviewerName,
-      issueType,
-      rating,
-    }),
-    note: "",
-    priorityScore: priority.priorityScore,
-    priorityLabel: priority.priorityLabel,
-    priorityReason: priority.priorityReason,
-  };
+function normalizeLiveReview(row: LiveReviewRow): ReviewItem | null {
+  if (!row || typeof row !== "object") return null;
+  if (typeof row.id !== "string" || !row.id.trim()) return null;
+  if (typeof row.locationName !== "string" || !row.locationName.trim()) return null;
+  if (typeof row.reviewerName !== "string") return null;
+  if (typeof row.reviewText !== "string") return null;
+  if (typeof row.rating !== "number" || !Number.isFinite(row.rating)) return null;
+  if (typeof row.createdAt !== "string" || !Number.isFinite(Date.parse(row.createdAt))) return null;
+  if (row.platform !== "Google" && row.platform !== "Yelp") return null;
+  if (!["low", "medium", "high"].includes(row.severity)) return null;
+  if (!["new", "drafted", "escalated", "resolved"].includes(row.status)) return null;
+  if (!["wait_time", "food_quality", "staff_behavior", "wrong_order", "cleanliness", "pricing", "general"].includes(row.issueType)) return null;
+  if (typeof row.suggestedReply !== "string" || typeof row.note !== "string") return null;
+  if (typeof row.priorityScore !== "number" || !Number.isFinite(row.priorityScore)) return null;
+  if (!["urgent", "high", "normal", "low"].includes(row.priorityLabel)) return null;
+  if (typeof row.priorityReason !== "string") return null;
+  return row;
 }
 
 function mergeWorkflowState(
@@ -574,8 +426,8 @@ export default function ReviewMonitoringPage() {
   const { push } = useToast();
   const searchParams = useSearchParams();
 
-  const [reviews, setReviews] = useState<ReviewItem[]>(INITIAL_REVIEWS);
-  const [selectedId, setSelectedId] = useState<string>(INITIAL_REVIEWS[0]?.id ?? "");
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
@@ -624,29 +476,23 @@ export default function ReviewMonitoringPage() {
           items?: WorkflowStateRow[];
         };
 
-        const liveRows = Array.isArray(reviewsJson.reviews) ? reviewsJson.reviews : [];
-        const workflowRows = Array.isArray(workflowJson.items) ? workflowJson.items : [];
-
-        const normalized = liveRows
-          .map(normalizeLiveReview)
-          .filter((item) => item.locationName && item.id);
-
-        if (normalized.length > 0) {
-          const merged = mergeWorkflowState(normalized, workflowRows);
-          const sorted = sortReviews(merged);
-          setReviews(sorted);
-          setSelectedId(sorted[0]?.id ?? "");
-          setUsingLiveData(true);
-        } else {
-          const mergedFallback = mergeWorkflowState(INITIAL_REVIEWS, workflowRows);
-          const sorted = sortReviews(mergedFallback);
-          setReviews(sorted);
-          setSelectedId(sorted[0]?.id ?? "");
-          setUsingLiveData(false);
+        if (!Array.isArray(reviewsJson.reviews) || !Array.isArray(workflowJson.items)) {
+          throw new Error("Unexpected review response");
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to load live reviews";
-        setLiveError(message);
+
+        const normalized = reviewsJson.reviews.map(normalizeLiveReview);
+        if (normalized.some((item) => item === null)) {
+          throw new Error("Malformed review records");
+        }
+        const merged = mergeWorkflowState(normalized as ReviewItem[], workflowJson.items);
+        const sorted = sortReviews(merged);
+        setReviews(sorted);
+        setSelectedId(sorted[0]?.id ?? "");
+        setUsingLiveData(true);
+      } catch {
+        setLiveError("Review data is temporarily unavailable. No verified reviews can be displayed.");
+        setReviews([]);
+        setSelectedId("");
         setUsingLiveData(false);
       } finally {
         setLiveLoading(false);
@@ -784,6 +630,8 @@ export default function ReviewMonitoringPage() {
     note?: string;
     suggestedReply?: string;
   }) {
+    if (liveLoading || liveError || !usingLiveData) return false;
+
     try {
       setSavingReviewId(next.reviewId);
 
@@ -837,14 +685,14 @@ export default function ReviewMonitoringPage() {
   async function markStatus(status: ReviewStatus) {
     if (!selectedReview) return;
 
-    updateSelectedReviewLocal({ status });
-
     const ok = await persistReviewState({
       reviewId: selectedReview.id,
       status,
     });
 
     if (!ok) return;
+
+    updateSelectedReviewLocal({ status });
 
     track({
       ts: Date.now(),
@@ -920,15 +768,15 @@ export default function ReviewMonitoringPage() {
                   </span>
                 )}
 
-                {!liveLoading && usingLiveData && (
+                {!liveLoading && !liveError && usingLiveData && (
                   <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">
-                    Live reviews loaded
+                    {reviews.length > 0 ? "Verified reviews loaded" : "No verified reviews available"}
                   </span>
                 )}
 
-                {!liveLoading && !usingLiveData && (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-neutral-300">
-                    Using fallback review data
+                {!liveLoading && liveError && (
+                  <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs text-rose-200">
+                    Review data unavailable
                   </span>
                 )}
 
@@ -989,28 +837,14 @@ export default function ReviewMonitoringPage() {
           </div>
         ) : null}
 
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard
-            label="New reviews"
-            value={summary.openCount}
-            sub="Waiting for response or triage"
-          />
-          <SummaryCard
-            label="High-risk reviews"
-            value={summary.highRisk}
-            sub="Needs fast attention"
-          />
-          <SummaryCard
-            label="Escalated issues"
-            value={summary.escalated}
-            sub="Owner or manager follow-up"
-          />
-          <SummaryCard
-            label="Drafted replies"
-            value={summary.drafted}
-            sub="Ready for approval"
-          />
-        </div>
+        {!liveLoading && !liveError && (
+          <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard label="New reviews" value={summary.openCount} sub="Waiting for response or triage" />
+            <SummaryCard label="High-risk reviews" value={summary.highRisk} sub="Needs fast attention" />
+            <SummaryCard label="Escalated issues" value={summary.escalated} sub="Owner or manager follow-up" />
+            <SummaryCard label="Drafted replies" value={summary.drafted} sub="Ready for approval" />
+          </div>
+        )}
 
         <div className="mb-6 rounded-3xl border border-white/10 bg-neutral-950/60 p-5 shadow-xl">
           <div className="mb-4">
@@ -1108,7 +942,13 @@ export default function ReviewMonitoringPage() {
             <div className="space-y-3">
               {sortedFilteredReviews.length === 0 ? (
                 <div className="rounded-2xl border border-white/10 bg-neutral-900/50 p-5 text-sm text-neutral-400">
-                  No reviews match the current filters.
+                  {liveLoading
+                    ? "Loading verified review data…"
+                    : liveError
+                      ? "Review records cannot be displayed while the review service is unavailable."
+                      : reviews.length === 0
+                        ? "No verified reviews available yet. Connect Google Business Profile or wait for a successful review sync."
+                        : "No reviews match the current filters."}
                 </div>
               ) : (
                 sortedFilteredReviews.map((review) => (
