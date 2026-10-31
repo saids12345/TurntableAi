@@ -192,3 +192,123 @@ export async function markVerifiedStripeCheckoutTerminal(
 ): Promise<void> {
   await transitionStripeCheckoutAttempt(admin, userId, attemptId, "open", status);
 }
+
+/**
+ * Verification barrier for a terminal Stripe Checkout Session.
+ * The caller MUST retrieve the session directly from Stripe immediately before
+ * calling this function; never pass an unverified event payload. A matching
+ * terminal session is the only evidence that can unblock an open claim.
+ *
+ * A claimed/needs_review attempt with no recorded session may be finalized ONLY
+ * when Stripe itself supplies a terminal session matching the account, attempt,
+ * price and customer. Absence of a session is NEVER grounds for releasing one.
+ */
+export type StripeCheckoutTerminalEvidence = {
+  id: string;
+  mode: string | null;
+  status: string | null;
+  client_reference_id: string | null;
+  metadata: Record<string, string> | null;
+  customer: string | { id: string } | null;
+  subscription?: string | { id: string } | null;
+};
+
+export async function reconcileStripeCheckoutTerminalEvidence(
+  admin: SupabaseClient,
+  userId: string,
+  attemptId: string,
+  session: StripeCheckoutTerminalEvidence,
+): Promise<"updated" | "already_terminal"> {
+  if (!userId || !attemptId || !session?.id) {
+    throw new Error("Stripe Checkout terminal evidence scope is missing");
+  }
+
+  const { data, error } = await admin
+    .from(table)
+    .select(columns)
+    .eq("attempt_id", attemptId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error("Stripe Checkout claim could not be verified");
+  }
+
+  const attempt = validateAttempt(data, userId);
+  const customerId = typeof session.customer === "string"
+    ? session.customer
+    : session.customer?.id ?? null;
+  const subscriptionId = typeof session.subscription === "string"
+    ? session.subscription
+    : session.subscription?.id ?? null;
+  const terminalStatus = session.status === "complete"
+    ? "completed"
+    : session.status === "expired"
+      ? "expired"
+      : null;
+
+  if (
+    attempt.attempt_id !== attemptId ||
+    !terminalStatus ||
+    session.mode !== "subscription" ||
+    session.client_reference_id !== userId ||
+    session.metadata?.supabase_user_id !== userId ||
+    session.metadata?.turntable_attempt_id !== attemptId ||
+    session.metadata?.turntable_price_id !== attempt.price_id ||
+    !customerId ||
+    (attempt.stripe_session_id !== null && attempt.stripe_session_id !== session.id) ||
+    (attempt.stripe_customer_id !== null && attempt.stripe_customer_id !== customerId) ||
+    (terminalStatus === "completed" && !subscriptionId)
+  ) {
+    throw new Error("Stripe Checkout terminal evidence did not match claim");
+  }
+
+  // Replayed terminal events are idempotent only if identity was persisted.
+  if (attempt.status === terminalStatus) {
+    if (attempt.stripe_session_id !== session.id || attempt.stripe_customer_id !== customerId) {
+      throw new Error("Stripe Checkout terminal claim lacked persisted identity");
+    }
+    return "already_terminal";
+  }
+
+  if (attempt.status === "open") {
+    if (attempt.stripe_session_id !== session.id || attempt.stripe_customer_id !== customerId) {
+      throw new Error("Stripe Checkout open claim lacked persisted identity");
+    }
+    await markVerifiedStripeCheckoutTerminal(admin, userId, attemptId, terminalStatus);
+    return "updated";
+  }
+
+  // Stripe may have completed creation before the server saved the session.
+  // Never release an uncertain claim just because an API call failed or aged.
+  // A verified terminal session, linked by metadata to THIS claim, permits an
+  // atomic compare-and-set to terminal with the recovered Stripe identities.
+  if (
+    (attempt.status !== "claimed" && attempt.status !== "needs_review") ||
+    attempt.stripe_session_id !== null
+  ) {
+    throw new Error("Stripe Checkout claim is not open for terminal transition");
+  }
+
+  const { data: saved, error: saveError } = await admin
+    .from(table)
+    .update({
+      status: terminalStatus,
+      stripe_customer_id: customerId,
+      stripe_session_id: session.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("attempt_id", attemptId)
+    .eq("user_id", userId)
+    .eq("status", attempt.status)
+    .is("stripe_session_id", null)
+    .select("attempt_id")
+    .maybeSingle();
+
+  if (saveError || saved?.attempt_id !== attemptId) {
+    // A concurrent writer may have transitioned the row. Do not overwrite it;
+    // a fresh Stripe event retry can re-read and reconcile the new state.
+    throw new Error("Unable to safely reconcile a pending Stripe Checkout claim");
+  }
+  return "updated";
+}
