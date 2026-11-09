@@ -8,6 +8,17 @@ import {
   findReusableStripeCheckoutUrl,
   shouldBlockNewStripeCheckout,
 } from "@/lib/stripeCheckoutPolicy";
+import {
+  acquireStripeCheckoutAttempt,
+  checkoutAttemptIdempotencyKey,
+  markStripeCheckoutNeedsReview,
+  markStripeCheckoutOpen,
+  markVerifiedStripeCheckoutTerminal,
+  releaseVerifiedUnstartedCheckout,
+} from "@/lib/stripeCheckoutAttempts";
+import {
+  isExpectedTurnTableCheckoutPrice,
+} from "@/lib/stripePricePolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +74,38 @@ export async function POST(req: Request) {
       );
     }
 
+    // Validate real Stripe pricing before any customer or
+    // checkout session is created or reused.
+    const checkoutPrice = await stripe.prices.retrieve(
+      priceId,
+      { expand: ["product"] },
+    );
+
+    const expectedLiveMode =
+      process.env.VERCEL_ENV === "production"
+        ? true
+        : process.env.VERCEL_ENV === "preview"
+          ? false
+          : null;
+
+    if (
+      !isExpectedTurnTableCheckoutPrice(
+        checkoutPrice,
+        priceId,
+        expectedLiveMode,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "PRICE_NOT_VERIFIED",
+          error:
+            "Subscription pricing could not be verified. Please contact support.",
+        },
+        { status: 503 },
+      );
+    }
+
     const supabaseAdmin = getSupabaseAdmin();
 
     // Load profile (customer/sub info)
@@ -104,14 +147,88 @@ export async function POST(req: Request) {
       );
     }
 
+    // The database unique index permits exactly one unresolved attempt
+    // per account. Acquire this BEFORE creating a Stripe customer/session.
+    const claim = await acquireStripeCheckoutAttempt(
+      supabaseAdmin, user.id, priceId,
+    );
+
+    if (claim.kind === "existing") {
+      const existing = claim.attempt;
+      if (
+        existing.price_id !== priceId ||
+        existing.status !== "open" ||
+        !existing.stripe_session_id ||
+        !existing.stripe_customer_id
+      ) {
+        return NextResponse.json(
+          { ok: false, code: "CHECKOUT_RECONCILIATION_REQUIRED",
+            error: "Checkout is already being prepared or requires support review. Please do not retry payment." },
+          { status: 409 },
+        );
+      }
+
+      // Do not rely on cached Checkout URLs or timestamps alone.
+      // Verify the actual Stripe session and owner before returning it.
+      const existingSession = await stripe.checkout.sessions.retrieve(
+        existing.stripe_session_id,
+      );
+      const existingCustomerId =
+        typeof existingSession.customer === "string"
+          ? existingSession.customer
+          : existingSession.customer?.id ?? null;
+      if (
+        existingSession.id !== existing.stripe_session_id ||
+        existingSession.mode !== "subscription" ||
+        existingSession.client_reference_id !== user.id ||
+        existingSession.metadata?.supabase_user_id !== user.id ||
+        existingSession.metadata?.turntable_price_id !== priceId ||
+        existingCustomerId !== existing.stripe_customer_id
+      ) {
+        return NextResponse.json(
+          { ok: false, code: "CHECKOUT_RECONCILIATION_REQUIRED",
+            error: "Checkout ownership could not be verified. Please contact support." },
+          { status: 503 },
+        );
+      }
+
+      if (existingSession.status === "complete" || existingSession.status === "expired") {
+        await markVerifiedStripeCheckoutTerminal(
+          supabaseAdmin, user.id, existing.attempt_id, existingSession.status === "complete" ? "completed" : "expired",
+        );
+        return NextResponse.json(
+          { ok: false, code: "CHECKOUT_STATE_REFRESHED",
+            error: "Checkout status was refreshed. Please reload billing before continuing." },
+          { status: 409 },
+        );
+      }
+
+      if (existingSession.status !== "open" || !existingSession.url) {
+        return NextResponse.json(
+          { ok: false, code: "CHECKOUT_RECONCILIATION_REQUIRED",
+            error: "Checkout is not ready. Please contact support." },
+          { status: 503 },
+        );
+      }
+      return NextResponse.json(
+        { ok: true, url: existingSession.url, reused: true },
+        { status: 200 },
+      );
+    }
+
+    const claimAttemptId = claim.attempt.attempt_id;
+
     let customerId = profile?.stripe_customer_id ?? null;
 
     // Create customer if missing
     if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email ?? undefined,
-        metadata: { supabase_user_id: user.id },
-      });
+      const customer = await stripe.customers.create(
+        {
+          email: user.email ?? undefined,
+          metadata: { supabase_user_id: user.id },
+        },
+        { idempotencyKey: checkoutAttemptIdempotencyKey(claimAttemptId, "customer") },
+      );
 
       customerId = customer.id;
 
@@ -159,6 +276,8 @@ export async function POST(req: Request) {
       });
 
     if (stripeSubscriptions.has_more) {
+      // No Checkout session was created by this attempt.
+      await releaseVerifiedUnstartedCheckout(supabaseAdmin, user.id, claimAttemptId);
       return NextResponse.json(
         {
           ok: false,
@@ -180,6 +299,8 @@ export async function POST(req: Request) {
       );
 
     if (stripeAlreadySubscribed) {
+      // Stripe verified an existing subscription; this attempt made no session.
+      await releaseVerifiedUnstartedCheckout(supabaseAdmin, user.id, claimAttemptId);
       return NextResponse.json(
         {
           ok: false,
@@ -221,6 +342,7 @@ export async function POST(req: Request) {
       });
 
     if (openCheckoutSessions.has_more) {
+      await releaseVerifiedUnstartedCheckout(supabaseAdmin, user.id, claimAttemptId);
       return NextResponse.json(
         {
           ok: false,
@@ -248,6 +370,25 @@ export async function POST(req: Request) {
       });
 
     if (reusableCheckoutUrl) {
+      const existingSession = openCheckoutSessions.data.find(
+        (session) => session.url === reusableCheckoutUrl &&
+          session.status === "open" &&
+          session.client_reference_id === user.id &&
+          session.metadata?.supabase_user_id === user.id &&
+          session.metadata?.turntable_price_id === priceId &&
+          (typeof session.customer === "string" ? session.customer : session.customer?.id) === customerId,
+      );
+      if (!existingSession?.id) {
+        throw new Error("Stripe Checkout session reuse evidence was incomplete");
+      }
+      await markStripeCheckoutOpen(supabaseAdmin, {
+        userId: user.id,
+        attemptId: claimAttemptId,
+        stripeCustomerId: customerId,
+        stripeSessionId: existingSession.id,
+        checkoutUrl: reusableCheckoutUrl,
+        expiresAt: existingSession.expires_at ?? null,
+      });
       return NextResponse.json(
         {
           ok: true,
@@ -261,7 +402,22 @@ export async function POST(req: Request) {
       );
     }
 
-    const session = await stripe.checkout.sessions.create(
+    // Never open a second session while an older one is still open,
+    // even if a different redirect path prevented reuse.
+    if (openCheckoutSessions.data.length > 0) {
+      await releaseVerifiedUnstartedCheckout(supabaseAdmin, user.id, claimAttemptId);
+      return NextResponse.json(
+        { ok: false, code: "EXISTING_CHECKOUT_SESSION",
+          error: "Another checkout is already open. Please use the existing checkout or contact support." },
+        { status: 409 },
+      );
+    }
+
+    // A failed or timed-out Stripe call may have created a session.
+    // Keep the claim blocked for deliberate Stripe reconciliation.
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create(
       {
         mode: "subscription",
         customer: customerId,
@@ -274,6 +430,8 @@ export async function POST(req: Request) {
             user.id,
           turntable_price_id:
             priceId,
+          turntable_attempt_id:
+            claimAttemptId,
         },
 
         // Card required to start trial
@@ -297,11 +455,14 @@ export async function POST(req: Request) {
 
         allow_promotion_codes: false,
       },
-      {
-        // Unique per attempt so Stripe never blocks repeat clicks as a “duplicate”
-        idempotencyKey: `ttai_checkout_${user.id}_${priceId}_${Date.now()}`,
-      }
-    );
+        {
+          idempotencyKey: checkoutAttemptIdempotencyKey(claimAttemptId, "session"),
+        },
+      );
+    } catch (error) {
+      await markStripeCheckoutNeedsReview(supabaseAdmin, user.id, claimAttemptId);
+      throw error;
+    }
 
     if (!session.url) {
       return NextResponse.json(
@@ -309,6 +470,15 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+
+    await markStripeCheckoutOpen(supabaseAdmin, {
+      userId: user.id,
+      attemptId: claimAttemptId,
+      stripeCustomerId: customerId,
+      stripeSessionId: session.id,
+      checkoutUrl: session.url,
+      expiresAt: session.expires_at ?? null,
+    });
 
     return NextResponse.json({ ok: true, url: session.url }, { status: 200 });
   } catch (err: any) {

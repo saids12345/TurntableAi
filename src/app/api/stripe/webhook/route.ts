@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { isAllowedStripeStatus } from "@/lib/plans";
+import { reconcileStripeCheckoutTerminalEvidence } from "@/lib/stripeCheckoutAttempts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,7 +157,7 @@ function getSupabaseUserIdFromMetadata(obj: any): string | null {
 
 // ✅ LOCK on past_due
 function computeIsPro(status: unknown): boolean {
-  return status === "trialing" || status === "active";
+  return typeof status === "string" && isAllowedStripeStatus(status);
 }
 
 function getCustomerIdFromObj(obj: any): string | null {
@@ -368,6 +370,61 @@ async function upsertProfile(args: {
   if (error) throw new Error(`Supabase upsert failed: ${error.message}`);
 }
 
+/**
+ * Re-fetch webhook Checkout sessions from Stripe instead of trusting a
+ * potentially old event snapshot. A mismatch is retryable: never write a
+ * terminal checkout claim based on unexpected Stripe state.
+ */
+async function retrieveTerminalCheckoutSession(
+  sessionId: string,
+  expectedStatus: "complete" | "expired",
+): Promise<Stripe.Checkout.Session> {
+  if (!sessionId) throw new Error("Stripe Checkout webhook session ID is missing");
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  if (session.id !== sessionId || session.status !== expectedStatus) {
+    throw new Error("Stripe Checkout webhook terminal state could not be verified");
+  }
+  return session;
+}
+
+/**
+ * Legacy sessions created before durable Checkout claims have no attempt ID.
+ * Preserve their existing subscription webhook behavior without querying the
+ * new claims table. Any session WITH an attempt ID must reconcile successfully
+ * before Stripe's webhook event is marked processed.
+ */
+async function reconcileWebhookCheckoutAttempt(
+  session: Stripe.Checkout.Session,
+): Promise<void> {
+  const attemptId = session.metadata?.turntable_attempt_id;
+  if (!attemptId) return;
+
+  const userId = session.metadata?.supabase_user_id;
+  if (!userId) {
+    throw new Error("Stripe Checkout claim is missing account metadata");
+  }
+
+  const stripeCustomerId = getCustomerIdFromObj(session);
+  const subscriptionId = typeof session.subscription === "string"
+    ? session.subscription
+    : session.subscription?.id ?? null;
+
+  await reconcileStripeCheckoutTerminalEvidence(
+    getSupabaseAdmin(),
+    userId,
+    attemptId,
+    {
+      id: session.id,
+      mode: session.mode,
+      status: session.status,
+      client_reference_id: session.client_reference_id,
+      metadata: session.metadata,
+      customer: stripeCustomerId,
+      subscription: subscriptionId,
+    },
+  );
+}
+
 export async function POST(req: Request) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
@@ -427,7 +484,8 @@ export async function POST(req: Request) {
 
     switch (event.type) {
       case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
+        const eventSession = event.data.object as Stripe.Checkout.Session;
+        const session = await retrieveTerminalCheckoutSession(eventSession.id, "complete");
 
         const stripeCustomerId = getCustomerIdFromObj(session);
 
@@ -482,6 +540,17 @@ export async function POST(req: Request) {
           sub,
         });
 
+        // Only now release a completed claim: profile/trial sync succeeded.
+        // A failure prevents event acknowledgement so Stripe can retry.
+        await reconcileWebhookCheckoutAttempt(session);
+
+        break;
+      }
+
+      case "checkout.session.expired": {
+        const eventSession = event.data.object as Stripe.Checkout.Session;
+        const session = await retrieveTerminalCheckoutSession(eventSession.id, "expired");
+        await reconcileWebhookCheckoutAttempt(session);
         break;
       }
 
