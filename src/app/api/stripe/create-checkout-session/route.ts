@@ -18,6 +18,7 @@ import {
 } from "@/lib/stripeCheckoutAttempts";
 import {
   isExpectedTurnTableCheckoutPrice,
+  resolveStripeCheckoutPriceExpectation,
 } from "@/lib/stripePricePolicy";
 
 export const runtime = "nodejs";
@@ -74,25 +75,37 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validate real Stripe pricing before any customer or
-    // checkout session is created or reused.
+    // Staging is a separate Vercel project whose environment is
+    // named "production". Require its exact URL and test API key.
+    const priceExpectation = resolveStripeCheckoutPriceExpectation({
+      vercelEnv: process.env.VERCEL_ENV,
+      siteUrl: process.env.NEXT_PUBLIC_SITE_URL,
+      stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+    });
+
+    if (!priceExpectation) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "PRICE_NOT_VERIFIED",
+          error: "Subscription configuration could not be verified.",
+        },
+        { status: 503 },
+      );
+    }
+
+    // Verify Stripe price before creating any customer or session.
     const checkoutPrice = await stripe.prices.retrieve(
       priceId,
       { expand: ["product"] },
     );
 
-    const expectedLiveMode =
-      process.env.VERCEL_ENV === "production"
-        ? true
-        : process.env.VERCEL_ENV === "preview"
-          ? false
-          : null;
-
     if (
       !isExpectedTurnTableCheckoutPrice(
         checkoutPrice,
         priceId,
-        expectedLiveMode,
+        priceExpectation.expectedLiveMode,
+        priceExpectation.expectedProductName,
       )
     ) {
       return NextResponse.json(

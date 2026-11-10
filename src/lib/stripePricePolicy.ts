@@ -13,10 +13,50 @@ type PriceEvidence = {
   product?: unknown;
 };
 
+export type ExpectedStripeProductName =
+  | "TurnTableAI Pro"
+  | "TurnTableAI Pro — Staging";
+
+export function resolveStripeCheckoutPriceExpectation(config: {
+  vercelEnv?: string;
+  siteUrl?: string;
+  stripeSecretKey?: string;
+}): {
+  expectedLiveMode: boolean | null;
+  expectedProductName: ExpectedStripeProductName;
+} | null {
+  const siteUrl = config.siteUrl?.replace(/\/+$/, "");
+
+  if (siteUrl === "https://turntableai-staging.vercel.app") {
+    if (
+      config.vercelEnv !== "production" ||
+      !config.stripeSecretKey?.startsWith("sk_test_")
+    ) {
+      return null;
+    }
+
+    return {
+      expectedLiveMode: false,
+      expectedProductName: "TurnTableAI Pro — Staging",
+    };
+  }
+
+  return {
+    expectedLiveMode:
+      config.vercelEnv === "production"
+    ? true
+        : config.vercelEnv === "preview"
+          ? false
+          : null,
+    expectedProductName: "TurnTableAI Pro",
+  };
+}
+
 export function isExpectedTurnTableCheckoutPrice(
   price: PriceEvidence | null,
   configuredPriceId: string,
   expectedLiveMode: boolean | null,
+  expectedProductName: ExpectedStripeProductName = "TurnTableAI Pro",
 ): boolean {
   if (!price || price.id !== configuredPriceId) {
     return false;
@@ -35,7 +75,7 @@ export function isExpectedTurnTableCheckoutPrice(
   };
 
   if (
-    verifiedProduct.name !== "TurnTableAI Pro" ||
+    verifiedProduct.name !== expectedProductName ||
     verifiedProduct.active !== true ||
     verifiedProduct.deleted === true
   ) {
