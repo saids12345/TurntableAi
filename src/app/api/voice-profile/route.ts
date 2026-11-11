@@ -10,7 +10,8 @@ import { requireProForApi } from "@/lib/requirePro";
  */
 export async function GET(_req: NextRequest) {
   // 🔒 Pro lock (trial or paid). Prevents bypassing the UI.
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const supabase = await getSupabaseRouteClient();
@@ -55,7 +56,8 @@ export async function GET(_req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   // 🔒 Pro lock (trial or paid). Prevents bypassing the UI.
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const supabase = await getSupabaseRouteClient();

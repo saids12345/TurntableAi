@@ -30,7 +30,8 @@ type InsightSnapshotPayload = {
 };
 
 export async function GET(req: NextRequest) {
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const supabase = await getSupabaseRouteClient();
@@ -71,7 +72,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const supabase = await getSupabaseRouteClient();
