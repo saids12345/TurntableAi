@@ -13,7 +13,9 @@ export const runtime = "nodejs"; // ensure Buffer is available
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const { user } = await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
+  const { user } = proAccessGate;
 
   try {
     for (const key of [

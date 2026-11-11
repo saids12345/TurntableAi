@@ -769,7 +769,8 @@ async function upsertGeneratedInsights(userId: string, insights: GeneratedInsigh
 }
 
 export async function POST() {
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const supabase = await getSupabaseRouteClient();

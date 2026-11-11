@@ -32,8 +32,9 @@ export async function GET(
      * Require an authenticated TurnTableAI
      * owner with Pro/trial access.
      */
-    const { user } =
-      await requireProForApi();
+    const proAccessGate = await requireProForApi();
+    if (proAccessGate instanceof Response) return proAccessGate;
+    const { user } = proAccessGate;
 
     /*
      * Generate a fresh unpredictable

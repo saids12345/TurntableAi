@@ -4,7 +4,8 @@ import { requireProForApi } from "@/lib/requirePro";
 
 export async function POST(req: NextRequest) {
   // 🔒 Pro lock (trial or paid users only)
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const body = await req.json();

@@ -15,8 +15,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { user } =
-      await requireProForApi();
+    const proAccessGate = await requireProForApi();
+    if (proAccessGate instanceof Response) return proAccessGate;
+    const { user } = proAccessGate;
 
     const supabase =
       getSupabaseAdmin();

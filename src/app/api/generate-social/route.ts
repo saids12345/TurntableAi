@@ -39,7 +39,8 @@ async function getStyleGuide(): Promise<string | null> {
 
 export async function POST(req: NextRequest) {
   // 🔒 Pro lock (trial or paid). Prevents bypassing the UI.
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const body = (await req.json().catch(() => ({}))) as any;

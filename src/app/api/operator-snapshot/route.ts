@@ -661,7 +661,8 @@ function buildPerformanceActions(locations: PerformanceLocation[]): PerformanceA
 }
 
 export async function GET() {
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const supabase = await getSupabaseRouteClient();

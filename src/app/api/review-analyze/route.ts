@@ -23,7 +23,8 @@ function extractText(resp: any): string {
 
 export async function POST(req: NextRequest) {
   // 🔒 Pro lock (trial or paid). Prevents bypassing the UI.
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   const body = await req.json().catch(() => ({} as any));
   const reviewText = String(body?.reviewText ?? "").trim();
