@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { isAllowedStripeStatus } from "@/lib/plans";
 import { sanitizeInternalPath } from "@/lib/safeInternalPath";
+import { formatBillingDate } from "@/lib/billingDate";
 
 type Props = {
   authed: boolean;
@@ -16,23 +17,6 @@ type Props = {
   trialUsed?: boolean;
   nextPath?: string;
 };
-
-function formatDateMaybe(iso?: string | null) {
-  if (!iso) return "—";
-
-  const d = new Date(iso);
-
-  if (Number.isNaN(d.getTime())) {
-    return "—";
-  }
-
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 export default function BillingClient({
   authed,
@@ -47,6 +31,19 @@ export default function BillingClient({
 }: Props) {
   const [loading, setLoading] = useState<"checkout" | "portal" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // UTC is deterministic during server rendering and hydration.
+  // After mounting, display dates in the browser's time zone.
+  const [billingTimeZone, setBillingTimeZone] = useState("UTC");
+
+  useEffect(() => {
+    try {
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detected) setBillingTimeZone(detected);
+    } catch {
+      // Retain the explicitly labeled UTC fallback.
+    }
+  }, []);
 
   const safeNext =
     sanitizeInternalPath(
@@ -76,19 +73,19 @@ export default function BillingClient({
 
     if (!currentPeriodEnd) return "—";
 
-    const when = formatDateMaybe(currentPeriodEnd);
+    const when = formatBillingDate(currentPeriodEnd, billingTimeZone);
 
     if (stripeStatus === "trialing") return `Trial ends ${when}`;
     if (stripeStatus === "active") return `Renews on ${when}`;
 
     return when;
-  }, [stripeStatus, currentPeriodEnd]);
+  }, [stripeStatus, currentPeriodEnd, billingTimeZone]);
 
   const cancellationLabel =
     (stripeStatus === "trialing" ||
       stripeStatus === "active") &&
     cancelAt
-      ? `Scheduled for ${formatDateMaybe(cancelAt)}`
+      ? `Scheduled for ${formatBillingDate(cancelAt, billingTimeZone)}`
       : null;
 
   const [stripeReturn, setStripeReturn] = useState<{
