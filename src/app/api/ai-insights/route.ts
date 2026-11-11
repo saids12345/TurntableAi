@@ -448,7 +448,8 @@ async function getAuthenticatedUserId() {
 }
 
 export async function GET() {
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   const userId = await getAuthenticatedUserId();
 

@@ -45,7 +45,7 @@ export async function requirePro(opts?: { billingPath?: string }) {
 
 /**
  * API/route-handler guard.
- * Throws Response(401/402) so callers stop immediately.
+ * Returns Response(401/402) for callers to return immediately.
  */
 export async function requireProForApi() {
   const supabase = await getSupabaseServerClient();
@@ -55,17 +55,29 @@ export async function requireProForApi() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    throw new Response(JSON.stringify({ error: "Unauthorized" }), {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "content-type": "application/json" },
     });
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("is_pro, plan, stripe_subscription_status")
     .eq("id", user.id)
     .maybeSingle();
+
+  if (profileError) {
+    return new Response(
+      JSON.stringify({
+        error: "Subscription access temporarily unavailable",
+      }),
+      {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }
 
   const isPro = hasProAccess({
     isPro: profile?.is_pro,
@@ -73,7 +85,7 @@ export async function requireProForApi() {
     stripeSubscriptionStatus: profile?.stripe_subscription_status,
   });
   if (!isPro) {
-    throw new Response(JSON.stringify({ error: "Pro required" }), {
+    return new Response(JSON.stringify({ error: "Pro required" }), {
       status: 402,
       headers: { "content-type": "application/json" },
     });

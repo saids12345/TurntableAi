@@ -463,7 +463,8 @@ async function getPerformanceSnapshotForLocation(
 }
 
 export async function GET() {
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const supabase = await getSupabaseRouteClient();
@@ -504,7 +505,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const supabase = await getSupabaseRouteClient();
