@@ -21,20 +21,41 @@ export function resolveStripeCheckoutPriceExpectation(config: {
   vercelEnv?: string;
   siteUrl?: string;
   stripeSecretKey?: string;
+  nodeEnv?: string;
+  supabaseUrl?: string;
 }): {
   expectedLiveMode: boolean | null;
   expectedProductName: ExpectedStripeProductName;
 } | null {
   const siteUrl = config.siteUrl?.replace(/\/+$/, "");
 
-  if (siteUrl === "https://turntableai-staging.vercel.app") {
+  const stagingSupabaseUrl =
+    "https://sdlskzyizslisraurxzf.supabase.co";
+  const stagingSiteUrl =
+    "https://turntableai-staging.vercel.app";
+
+  // When using the isolated Staging DB, never fall through to
+  // a Production or unverified checkout policy.
+  if (config.supabaseUrl === stagingSupabaseUrl) {
+    const testKey = config.stripeSecretKey?.startsWith("sk_test_") === true;
+    const local = !config.vercelEnv && config.nodeEnv === "development" &&
+      (!siteUrl || siteUrl === "http://localhost:3000");
+    const hosted = config.vercelEnv === "production" &&
+      siteUrl === stagingSiteUrl;
+    if (!testKey || (!local && !hosted)) return null;
+    return {
+      expectedLiveMode: false,
+      expectedProductName: "TurnTableAI Pro — Staging",
+    };
+  }
+
+  // Hosted Staging must never accept explicitly different DB credentials.
+  if (siteUrl === stagingSiteUrl) {
     if (
+      (config.supabaseUrl && config.supabaseUrl !== stagingSupabaseUrl) ||
       config.vercelEnv !== "production" ||
       !config.stripeSecretKey?.startsWith("sk_test_")
-    ) {
-      return null;
-    }
-
+    ) return null;
     return {
       expectedLiveMode: false,
       expectedProductName: "TurnTableAI Pro — Staging",

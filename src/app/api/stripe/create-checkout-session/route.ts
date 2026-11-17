@@ -81,6 +81,8 @@ export async function POST(req: Request) {
       vercelEnv: process.env.VERCEL_ENV,
       siteUrl: process.env.NEXT_PUBLIC_SITE_URL,
       stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+      nodeEnv: process.env.NODE_ENV,
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
     });
 
     if (!priceExpectation) {
