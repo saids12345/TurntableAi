@@ -136,8 +136,9 @@ export async function GET(
      * The callback must still belong to
      * a signed-in Pro/trial TurnTableAI user.
      */
-    const { user } =
-      await requireProForApi();
+    const proAccessGate = await requireProForApi();
+    if (proAccessGate instanceof Response) throw proAccessGate;
+    const { user } = proAccessGate;
 
     /*
      * Prevent an OAuth attempt started by

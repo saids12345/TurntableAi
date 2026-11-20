@@ -113,7 +113,8 @@ function movingAverage(arr: number[], win = 3) {
 
 export async function POST(req: Request) {
   // 🔒 PRO GATE (prevents bypassing the UI)
-  await requireProForApi();
+  const proAccessGate = await requireProForApi();
+  if (proAccessGate instanceof Response) return proAccessGate;
 
   try {
     const body = (await req.json()) as Body;

@@ -77,8 +77,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { user } =
-      await requireProForApi();
+    const proAccessGate = await requireProForApi();
+    if (proAccessGate instanceof Response) throw proAccessGate;
+    const { user } = proAccessGate;
 
     if (
       !initiatingUserId ||
